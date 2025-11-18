@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (large)
+data/raw/*.ndjson
+data/processed/*.parquet
+*.parquet
+
+# MLflow
+mlruns/
+mlruns.db
+
+# Predictions
+predictions*.parquet
+
+# Docker volumes
+docker/volumes/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Keep directory structure but ignore large files
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!handoff/data/raw/slice_10min.ndjson
+!handoff/data/processed/features_10min.parquet
+!handoff/predictions_10min.parquet
+
