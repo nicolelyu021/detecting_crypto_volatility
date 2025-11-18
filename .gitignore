@@ -39,6 +39,10 @@ mlruns.db
 # Predictions
 predictions*.parquet
 
+# Evidently HTML reports (can be regenerated)
+reports/evidently/*.html
+!handoff/reports/evidently/train_test_combined_report.html
+
 # Docker volumes
 docker/volumes/
 
