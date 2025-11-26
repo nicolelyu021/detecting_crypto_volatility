@@ -67,8 +67,8 @@ docker/volumes/
 # AI artifacts (don't commit GenAI logs)
 docs/CHATGPT_FILES_LIST.md
 
-# Week 4 submission files (keep for team access)
-# Uncommenting to allow submission files:
-# !WEEK4_SUBMISSION.md
-# !week4_handoff_submission.zip
+# Week 4 submission files
+# Submission zip is generated from handoff/ directory, no need to track
+week4_handoff_submission.zip
+# Keep WEEK4_SUBMISSION.md for documentation
 
