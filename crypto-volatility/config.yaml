@@ -10,8 +10,7 @@ kafka:
 coinbase:
   ws_url: "wss://advanced-trade-ws.coinbase.com"
   products:
-    - "BTC-USD"
-    - "ETH-USD"
+    - "BTC-USD"  # Bitcoin only
   channels:
     - "ticker"
   heartbeat_interval: 30  # seconds
@@ -45,7 +44,7 @@ modeling:
   train_ratio: 0.6  # 60% for training
   val_ratio: 0.2    # 20% for validation
   test_ratio: 0.2   # 20% for testing
-  threshold_percentile: 95  # Percentile for volatility spike threshold
+  threshold_percentile: 85  # Percentile for volatility spike threshold (lowered to get more positive samples)
   baseline_threshold_std: 2.0  # Z-score threshold for baseline model
 
 logging:

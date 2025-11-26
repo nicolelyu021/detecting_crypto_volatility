@@ -38,3 +38,7 @@ logs/
 .DS_Store
 Thumbs.db
 
+
+# Model artifacts (too large for git)
+models/artifacts/*.pkl
+*.pkl

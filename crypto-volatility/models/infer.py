@@ -50,24 +50,89 @@ class VolatilityPredictor:
     
     def predict(self, features: pd.DataFrame) -> np.ndarray:
         """Predict volatility spikes."""
-        # Select feature columns
-        feature_cols = [
-            'price', 'midprice', 'return_1s', 'return_5s', 'return_30s', 'return_60s',
-            'volatility', 'trade_intensity', 'spread_abs', 'spread_rel', 'order_book_imbalance'
-        ]
+        # First, check what features the model expects
+        model_expected_features = None
+        if hasattr(self.model, 'feature_names_in_'):
+            model_expected_features = list(self.model.feature_names_in_)
+        elif hasattr(self.model, 'get_booster'):
+            # For XGBoost, check booster
+            booster = self.model.get_booster()
+            if hasattr(booster, 'feature_names') and booster.feature_names:
+                model_expected_features = list(booster.feature_names)
         
-        # Filter to only columns that exist
-        feature_cols = [col for col in feature_cols if col in features.columns]
-        X = features[feature_cols].copy()
+        # If we have model's expected features, use them exactly
+        if model_expected_features:
+            # Create a DataFrame with the exact features the model expects, in the exact order
+            X_dict = {}
+            for feat_name in model_expected_features:
+                if feat_name in features.columns:
+                    X_dict[feat_name] = features[feat_name].values
+                else:
+                    # Fill missing features with 0
+                    logger.warning(f"Feature {feat_name} not found in input, using 0")
+                    X_dict[feat_name] = np.zeros(len(features))
+            
+            # Create DataFrame with exact column names and order
+            X = pd.DataFrame(X_dict, columns=model_expected_features)
+        else:
+            # Fallback: use scaler's feature names if available
+            if self.scaler is not None and hasattr(self.scaler, 'feature_names_in_'):
+                scaler_features = list(self.scaler.feature_names_in_)
+                X_dict = {}
+                for feat_name in scaler_features:
+                    if feat_name in features.columns:
+                        X_dict[feat_name] = features[feat_name].values
+                    else:
+                        X_dict[feat_name] = np.zeros(len(features))
+                X = pd.DataFrame(X_dict, columns=scaler_features)
+            else:
+                # Last resort: use standard feature list
+                feature_cols = [
+                    'price', 'midprice', 'return_1s', 'return_5s', 'return_30s', 'return_60s',
+                    'volatility', 'trade_intensity', 'spread_abs', 'spread_rel', 'order_book_imbalance'
+                ]
+                feature_cols = [col for col in feature_cols if col in features.columns]
+                X = features[feature_cols].copy()
         
         # Handle NaN values
         X = X.fillna(0)
         
         # Scale if scaler available
         if self.scaler is not None:
+            # Check how many features the scaler expects
+            expected_n_features = getattr(self.scaler, 'n_features_in_', None)
+            if expected_n_features is not None and X.shape[1] != expected_n_features:
+                # If scaler expects different number of features, try to match
+                if hasattr(self.scaler, 'feature_names_in_'):
+                    # Use only the features the scaler was trained on
+                    scaler_features = list(self.scaler.feature_names_in_)
+                    available_scaler_features = [f for f in scaler_features if f in X.columns]
+                    if len(available_scaler_features) == expected_n_features:
+                        X = X[available_scaler_features]
+                    else:
+                        # Use scaler's expected features in order
+                        X = X[scaler_features] if all(f in X.columns for f in scaler_features) else X.iloc[:, :expected_n_features]
+                        logger.warning(f"Using scaler's feature order: {list(X.columns)}")
+                else:
+                    # Fallback: use first N features that scaler expects
+                    logger.warning(f"Scaler expects {expected_n_features} features but got {X.shape[1]}. Using first {expected_n_features} features.")
+                    X = X.iloc[:, :expected_n_features]
+            
             X_scaled = self.scaler.transform(X)
         else:
             X_scaled = X.values
+        
+        # Ensure X_scaled has the right shape for the model
+        if hasattr(self.model, 'n_features_in_'):
+            model_n_features = self.model.n_features_in_
+            if X_scaled.shape[1] != model_n_features:
+                logger.warning(f"Model expects {model_n_features} features but got {X_scaled.shape[1]}. Adjusting.")
+                if X_scaled.shape[1] > model_n_features:
+                    X_scaled = X_scaled[:, :model_n_features]
+                else:
+                    # Pad with zeros (not ideal but better than failing)
+                    padding = np.zeros((X_scaled.shape[0], model_n_features - X_scaled.shape[1]))
+                    X_scaled = np.hstack([X_scaled, padding])
         
         # Predict
         predictions = self.model.predict(X_scaled)
@@ -76,23 +141,115 @@ class VolatilityPredictor:
     
     def predict_proba(self, features: pd.DataFrame) -> np.ndarray:
         """Predict probabilities of volatility spikes."""
-        # Select feature columns
-        feature_cols = [
-            'price', 'midprice', 'return_1s', 'return_5s', 'return_30s', 'return_60s',
-            'volatility', 'trade_intensity', 'spread_abs', 'spread_rel', 'order_book_imbalance'
-        ]
+        # First, check what features the model expects
+        model_expected_features = None
+        if hasattr(self.model, 'feature_names_in_'):
+            model_expected_features = list(self.model.feature_names_in_)
+        elif hasattr(self.model, 'get_booster'):
+            # For XGBoost, check booster
+            booster = self.model.get_booster()
+            if hasattr(booster, 'feature_names') and booster.feature_names:
+                model_expected_features = list(booster.feature_names)
         
-        # Filter to only columns that exist
-        feature_cols = [col for col in feature_cols if col in features.columns]
-        X = features[feature_cols].copy()
-        
-        # Handle NaN values
-        X = X.fillna(0)
+        # If we have model's expected features, use them exactly
+        if model_expected_features:
+            # Create a DataFrame with the exact features the model expects, in the exact order
+            X_dict = {}
+            for feat_name in model_expected_features:
+                if feat_name in features.columns:
+                    X_dict[feat_name] = features[feat_name].values
+                else:
+                    # Fill missing features with 0
+                    logger.warning(f"Feature {feat_name} not found in input, using 0")
+                    X_dict[feat_name] = np.zeros(len(features))
+            
+            # Create DataFrame with exact column names and order
+            X = pd.DataFrame(X_dict, columns=model_expected_features)
+        else:
+            # Fallback: use scaler's feature names if available
+            if self.scaler is not None and hasattr(self.scaler, 'feature_names_in_'):
+                scaler_features = list(self.scaler.feature_names_in_)
+                X_dict = {}
+                for feat_name in scaler_features:
+                    if feat_name in features.columns:
+                        X_dict[feat_name] = features[feat_name].values
+                    else:
+                        X_dict[feat_name] = np.zeros(len(features))
+                X = pd.DataFrame(X_dict, columns=scaler_features)
+            else:
+                # Last resort: use standard feature list
+                feature_cols = [
+                    'price', 'midprice', 'return_1s', 'return_5s', 'return_30s', 'return_60s',
+                    'volatility', 'trade_intensity', 'spread_abs', 'spread_rel', 'order_book_imbalance'
+                ]
+                feature_cols = [col for col in feature_cols if col in features.columns]
+                X = features[feature_cols].copy()
         
         # Scale if scaler available
-        if self.scaler is not None:
-            X_scaled = self.scaler.transform(X)
+        # IMPORTANT: Scaler may expect different features than the model
+        scaler_features = None
+        if self.scaler is not None and hasattr(self.scaler, 'feature_names_in_'):
+            scaler_features = list(self.scaler.feature_names_in_)
+        
+        if self.scaler is not None and scaler_features:
+            # Create DataFrame with scaler's expected features (all 11)
+            X_for_scaler_dict = {}
+            for feat_name in scaler_features:
+                if feat_name in features.columns:
+                    val = features[feat_name].values
+                    # Handle NaN
+                    val = np.nan_to_num(val, nan=0.0)
+                    X_for_scaler_dict[feat_name] = val
+                else:
+                    # Fill missing with 0
+                    X_for_scaler_dict[feat_name] = np.zeros(len(features))
+            
+            X_for_scaler = pd.DataFrame(X_for_scaler_dict, columns=scaler_features)
+            X_scaled = self.scaler.transform(X_for_scaler)
+            
+            # Now select only the features the model expects from the scaled result
+            if model_expected_features:
+                # Convert scaled array back to DataFrame for easier selection
+                X_scaled_df = pd.DataFrame(X_scaled, columns=scaler_features)
+                # Check which model features exist in scaled features
+                available_model_features = [f for f in model_expected_features if f in X_scaled_df.columns]
+                
+                if len(available_model_features) == len(model_expected_features):
+                    # All model features available - select them in the exact order model expects
+                    X_scaled = X_scaled_df[model_expected_features].values
+                    logger.debug(f"Selected {len(model_expected_features)} model features: {model_expected_features}")
+                else:
+                    # Some model features missing - log what we have vs what we need
+                    missing_features = [f for f in model_expected_features if f not in X_scaled_df.columns]
+                    logger.warning(f"Model expects {len(model_expected_features)} features: {model_expected_features}")
+                    logger.warning(f"Available in scaled features: {list(X_scaled_df.columns)}")
+                    logger.warning(f"Missing features: {missing_features}")
+                    logger.warning(f"Found {len(available_model_features)}/{len(model_expected_features)} model features")
+                    
+                    # If we have some features, use them and pad with zeros for missing ones
+                    if available_model_features:
+                        # Get the values for available features in model's order
+                        result = np.zeros((X_scaled_df.shape[0], len(model_expected_features)))
+                        for i, feat_name in enumerate(model_expected_features):
+                            if feat_name in X_scaled_df.columns:
+                                result[:, i] = X_scaled_df[feat_name].values
+                            else:
+                                logger.warning(f"Using 0 for missing feature: {feat_name}")
+                                result[:, i] = 0.0
+                        X_scaled = result
+                    else:
+                        # No matching features - this is a serious problem
+                        logger.error(f"None of the model's expected features found in scaled features!")
+                        logger.error(f"Model expects: {model_expected_features}")
+                        logger.error(f"Scaler provides: {list(X_scaled_df.columns)}")
+                        # Fallback: use first N features (likely wrong but better than crashing)
+                        X_scaled = X_scaled[:, :len(model_expected_features)]
+            else:
+                # No model feature names - use all scaled features
+                X_scaled = X_scaled
         else:
+            # No scaler - use X directly
+            X = X.fillna(0)
             X_scaled = X.values
         
         # Predict probabilities
@@ -100,7 +257,7 @@ class VolatilityPredictor:
             probabilities = self.model.predict_proba(X_scaled)
         else:
             # For baseline model, use predict_proba if available
-            probabilities = self.model.predict_proba(X)
+            probabilities = self.model.predict_proba(X_scaled)
         
         return probabilities
 

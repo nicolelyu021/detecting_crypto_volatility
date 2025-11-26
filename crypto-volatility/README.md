@@ -2,6 +2,56 @@
 
 A real-time data pipeline for detecting short-term volatility spikes in cryptocurrency markets using Coinbase Advanced Trade WebSocket API, Kafka, MLflow, and Evidently.
 
+## 🎯 Week 4: System Setup & API Thin Slice
+
+This repository now includes the Week 4 deliverables with a complete FastAPI application, Docker Compose setup, and monitoring infrastructure.
+
+### Quick Start (Week 4)
+
+1. **Start Infrastructure:**
+   ```bash
+   docker-compose -f docker/compose.yaml up -d
+   ```
+
+2. **Test API:**
+   ```bash
+   curl http://localhost:8000/health
+   curl http://localhost:8000/docs  # Interactive API docs
+   ```
+
+3. **Replay 10-Minute Dataset:**
+   ```bash
+   python scripts/replay_to_kafka.py --duration 10
+   ```
+
+4. **Make a Prediction:**
+   ```bash
+   curl -X POST http://localhost:8000/predict \
+     -H "Content-Type: application/json" \
+     -d '{
+       "price": 50000.0,
+       "midprice": 50000.0,
+       "return_1s": 0.001,
+       "return_5s": 0.002,
+       "return_30s": 0.005,
+       "return_60s": 0.01,
+       "volatility": 0.02,
+       "trade_intensity": 10.0,
+       "spread_abs": 1.0,
+       "spread_rel": 0.00002,
+       "order_book_imbalance": 0.001
+     }'
+   ```
+
+### Week 4 Services
+
+- **API**: http://localhost:8000 (FastAPI with /health, /predict, /version, /metrics)
+- **MLflow**: http://localhost:5000 (Model registry)
+- **Prometheus**: http://localhost:9090 (Metrics database)
+- **Grafana**: http://localhost:3000 (Visualization - admin/admin)
+
+See [WEEK4_DELIVERABLES.md](WEEK4_DELIVERABLES.md) for complete Week 4 documentation.
+
 ## Project Structure
 
 ```
