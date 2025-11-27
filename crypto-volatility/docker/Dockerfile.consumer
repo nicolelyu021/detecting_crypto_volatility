@@ -1,0 +1,26 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements (consumer-specific to avoid dependency conflicts)
+COPY requirements-consumer.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements-consumer.txt
+
+# Copy application code
+COPY . .
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV CONFIG_PATH=/app/config.yaml
+
+# Run prediction consumer
+CMD ["python", "scripts/prediction_consumer.py"]
+

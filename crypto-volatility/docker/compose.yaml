@@ -40,13 +40,14 @@ services:
       MLFLOW_BACKEND_STORE_URI: sqlite:///mlflow.db
       MLFLOW_DEFAULT_ARTIFACT_ROOT: /mlflow/artifacts
     volumes:
-      - mlflow-data:/mlflow
+      - ./mlflow-data:/mlflow
     command: >
       mlflow server
       --host 0.0.0.0
       --port 5000
       --backend-store-uri sqlite:///mlflow.db
       --default-artifact-root /mlflow/artifacts
+      --serve-artifacts
     networks:
       - kafka-network
     healthcheck:
@@ -78,6 +79,33 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  prediction-consumer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.consumer
+    container_name: volatility-prediction-consumer
+    environment:
+      CONFIG_PATH: /app/config.yaml
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      # Optional: Override model source
+      # MODEL_VARIANT: "models:/xgb_model/Production"
+    volumes:
+      - ../models:/app/models
+      - ../config.yaml:/app/config.yaml
+    networks:
+      - kafka-network
+    depends_on:
+      - kafka
+      - mlflow
+      - api
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   prometheus:
     image: prom/prometheus:v2.48.0

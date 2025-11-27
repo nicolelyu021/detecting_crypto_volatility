@@ -1,56 +1,167 @@
 # Crypto Volatility Detection Pipeline
 
-A real-time data pipeline for detecting short-term volatility spikes in cryptocurrency markets using Coinbase Advanced Trade WebSocket API, Kafka, MLflow, and Evidently.
+A real-time data pipeline for detecting short-term volatility spikes in cryptocurrency markets using Coinbase Advanced Trade WebSocket API, Kafka, MLflow, and FastAPI.
 
-## 🎯 Week 4: System Setup & API Thin Slice
+## 🚀 Quick Start
 
-This repository now includes the Week 4 deliverables with a complete FastAPI application, Docker Compose setup, and monitoring infrastructure.
+### Prerequisites
 
-### Quick Start (Week 4)
+- Docker and Docker Compose
+- Python 3.10+ (for running scripts locally)
 
-1. **Start Infrastructure:**
-   ```bash
-   docker-compose -f docker/compose.yaml up -d
-   ```
+### 1. Start All Services
 
-2. **Test API:**
-   ```bash
-   curl http://localhost:8000/health
-   curl http://localhost:8000/docs  # Interactive API docs
-   ```
+```bash
+docker-compose -f docker/compose.yaml up -d
+```
 
-3. **Replay 10-Minute Dataset:**
-   ```bash
-   python scripts/replay_to_kafka.py --duration 10
-   ```
+This starts:
+- **Kafka** (port 9092) - Message streaming
+- **MLflow** (port 5000) - Model registry and tracking
+- **FastAPI** (port 8000) - Prediction API
+- **Prediction Consumer** - Real-time Kafka consumer
+- **Prometheus** (port 9090) - Metrics
+- **Grafana** (port 3000) - Dashboards
 
-4. **Make a Prediction:**
-   ```bash
-   curl -X POST http://localhost:8000/predict \
-     -H "Content-Type: application/json" \
-     -d '{
-       "price": 50000.0,
-       "midprice": 50000.0,
-       "return_1s": 0.001,
-       "return_5s": 0.002,
-       "return_30s": 0.005,
-       "return_60s": 0.01,
-       "volatility": 0.02,
-       "trade_intensity": 10.0,
-       "spread_abs": 1.0,
-       "spread_rel": 0.00002,
-       "order_book_imbalance": 0.001
-     }'
-   ```
+Verify services:
+```bash
+docker-compose -f docker/compose.yaml ps
+```
 
-### Week 4 Services
+### 2. Access Services
 
-- **API**: http://localhost:8000 (FastAPI with /health, /predict, /version, /metrics)
-- **MLflow**: http://localhost:5000 (Model registry)
-- **Prometheus**: http://localhost:9090 (Metrics database)
-- **Grafana**: http://localhost:3000 (Visualization - admin/admin)
+- **FastAPI Docs**: http://localhost:8000/docs (Interactive API documentation)
+- **MLflow UI**: http://localhost:5000 (Model experiments and registry)
+- **Prometheus**: http://localhost:9090 (Metrics)
+- **Grafana**: http://localhost:3000 (Login: admin/admin)
 
-See [WEEK4_DELIVERABLES.md](WEEK4_DELIVERABLES.md) for complete Week 4 documentation.
+### 3. Replay Data to Test Pipeline
+
+Replay raw data through Kafka to test the full pipeline:
+
+```bash
+python scripts/replay_to_kafka.py --duration 10
+```
+
+Options:
+- `--duration 10` - Replay 10 minutes of data (default)
+- `--speedup 2.0` - Replay at 2x speed
+- `--data-file path/to/file.ndjson` - Use specific file (default: most recent in `data/raw/`)
+
+### 4. Test API Endpoints
+
+#### Health Check
+```bash
+curl http://localhost:8000/health
+```
+
+Response:
+```json
+{
+  "status": "healthy",
+  "model_loaded": true,
+  "model_version": "local-1234567890",
+  "timestamp": 1234567890.0
+}
+```
+
+#### Get Version
+```bash
+curl http://localhost:8000/version
+```
+
+Response:
+```json
+{
+  "api_version": "1.0.0",
+  "model_version": "local-1234567890",
+  "model_loaded_at": 1234567890.0,
+  "python_version": "3.11.0"
+}
+```
+
+#### Make a Prediction
+```bash
+curl -X POST "http://localhost:8000/predict" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "price": 50000.0,
+    "midprice": 50000.5,
+    "return_1s": 0.0001,
+    "return_5s": 0.0005,
+    "return_30s": 0.002,
+    "return_60s": 0.004,
+    "volatility": 0.001,
+    "trade_intensity": 2.5,
+    "spread_abs": 1.0,
+    "spread_rel": 0.00002,
+    "order_book_imbalance": 0.1
+  }'
+```
+
+Response:
+```json
+{
+  "prediction": 0,
+  "probability": 0.23,
+  "model_version": "local-1234567890",
+  "timestamp": 1234567890.5
+}
+```
+
+#### Prometheus Metrics
+```bash
+curl http://localhost:8000/metrics
+```
+
+### 5. Check Real-Time Predictions (Kafka)
+
+View predictions from the streaming consumer:
+
+```bash
+docker exec -it kafka kafka-console-consumer \
+  --bootstrap-server localhost:9092 \
+  --topic ticks.predictions \
+  --from-beginning
+```
+
+### 6. View Consumer Logs
+
+```bash
+docker logs -f volatility-prediction-consumer
+```
+
+## 📋 API Endpoints Summary
+
+| Endpoint | Method | Description | Example |
+|----------|--------|-------------|---------|
+| `/health` | GET | Health check and model status | `curl http://localhost:8000/health` |
+| `/version` | GET | API and model version info | `curl http://localhost:8000/version` |
+| `/predict` | POST | Make volatility prediction | See example above |
+| `/metrics` | GET | Prometheus metrics | `curl http://localhost:8000/metrics` |
+| `/docs` | GET | Interactive API docs (Swagger UI) | Open in browser |
+
+## 🔄 Complete Pipeline Flow
+
+```
+Raw Data → Kafka (ticks.raw) 
+  → Feature Engine → Kafka (ticks.features) 
+  → Prediction Consumer → Kafka (ticks.predictions)
+```
+
+**To run the full pipeline:**
+
+1. Start services: `docker-compose -f docker/compose.yaml up -d`
+2. Run feature engine: `python features/featurizer.py` (in separate terminal)
+3. Replay data: `python scripts/replay_to_kafka.py --duration 10`
+4. Check predictions: View `ticks.predictions` topic or consumer logs
+
+## 📚 Additional Documentation
+
+- [Week 4 Deliverables](WEEK4_DELIVERABLES.md) - Complete Week 4 documentation
+- [Prediction Consumer Guide](docs/prediction_consumer.md) - Kafka consumer details
+- [How to Check Predictions](docs/check_predictions.md) - Verification guide
+- [MLflow Integration](docs/mlflow_integration.md) - Model versioning and rollback
 
 ## Project Structure
 
@@ -76,46 +187,20 @@ crypto-volatility/
 - Python 3.10+
 - Git
 
-## Quick Start
+## 📖 Detailed Setup (For Development)
 
-### 1. Start Infrastructure Services
-
-Start Kafka (KRaft mode) and MLflow:
-
-```bash
-cd docker
-docker compose up -d
-```
-
-Verify services are running:
-
-```bash
-docker compose ps
-```
-
-You should see:
-- `kafka` (port 9092)
-- `mlflow` (port 5000)
-
-Access MLflow UI at: http://localhost:5000
-
-### 2. Install Python Dependencies
+### Install Python Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configure Environment
-
-Copy the example environment file (optional, defaults are in config.yaml):
-
+For API only (avoids Pydantic conflicts):
 ```bash
-cp .env.example .env
+pip install -r requirements-api.txt
 ```
 
-Edit `.env` if you need to override any defaults.
-
-### 4. Run WebSocket Ingestor
+### Run WebSocket Ingestor (Live Data)
 
 Start ingesting data from Coinbase:
 
@@ -125,40 +210,25 @@ python scripts/ws_ingest.py
 
 The script will:
 - Connect to Coinbase Advanced Trade WebSocket API
-- Subscribe to ticker channels for BTC-USD and ETH-USD
+- Subscribe to ticker channels for BTC-USD
 - Publish messages to Kafka topic `ticks.raw`
-- Optionally save raw data to `data/raw/` directory
+- Save raw data to `data/raw/` directory
 
 Let it run for at least 15 minutes to collect data.
 
-### 5. Validate Kafka Stream
+### Run Feature Engine
 
-In a separate terminal, run the validation consumer:
-
-```bash
-python scripts/kafka_consume_check.py --duration 60
-```
-
-This will consume messages from Kafka and display validation statistics.
-
-### 6. Run Ingestor in Docker
-
-Build and run the ingestor container:
+Process raw data and generate features:
 
 ```bash
-# From project root directory
-# Build the image
-docker build -f docker/Dockerfile.ingestor -t crypto-ingestor .
-
-# Run the container (connect to Kafka network)
-docker run --rm \
-  --network docker_kafka-network \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/config.yaml:/app/config.yaml \
-  crypto-ingestor
+python features/featurizer.py
 ```
 
-Note: The network name may vary. Check with `docker network ls` and look for a network containing "kafka-network".
+This will:
+- Consume from `ticks.raw`
+- Compute features (returns, volatility, spreads, etc.)
+- Publish to `ticks.features`
+- Save to `data/processed/features.parquet`
 
 ## Configuration
 

@@ -15,6 +15,9 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 import yaml
+import mlflow
+import mlflow.sklearn
+import mlflow.xgboost
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -93,8 +96,20 @@ class PredictionResponse(BaseModel):
     timestamp: float = Field(..., description="Prediction timestamp")
 
 
-def load_model(config_path: str = "config.yaml") -> VolatilityPredictor:
-    """Load the best model (xgb_model.pkl)."""
+def load_model(config_path: str = "config.yaml"):
+    """
+    Load model from MLflow Model Registry or MLflow runs.
+    
+    Priority order:
+    1. MODEL_VARIANT env var (e.g., "models:/xgb_model/Production" or "models:/xgb_model/1")
+    2. Latest MLflow run with run_name matching model type
+    3. Local pickle file (fallback for backward compatibility)
+    
+    Supports:
+    - MODEL_VARIANT: MLflow model registry path (e.g., "models:/xgb_model/Production")
+    - MODEL_RUN_NAME: Specific MLflow run name (e.g., "ml_xgboost")
+    - MODEL_RUN_ID: Specific MLflow run ID
+    """
     global predictor, model_version, model_loaded_at
     
     start_time = time.time()
@@ -103,28 +118,164 @@ def load_model(config_path: str = "config.yaml") -> VolatilityPredictor:
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     
-    # Use ONLY xgb_model.pkl - no fallback
-    # Note: Based on training code, xgb_model.pkl was trained WITHOUT a scaler
-    models_dir = Path(config['modeling']['models_dir'])
-    model_path = models_dir / "xgb_model.pkl"
+    # Setup MLflow tracking URI
+    tracking_uri = config['mlflow']['tracking_uri']
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_name = config['mlflow']['experiment_name']
     
-    if not model_path.exists():
-        raise FileNotFoundError(f"xgb_model.pkl not found at {model_path}. This is the required model.")
+    model_variant = os.getenv('MODEL_VARIANT', None)
+    model_run_name = os.getenv('MODEL_RUN_NAME', 'ml_xgboost')  # Default to xgboost
+    model_run_id = os.getenv('MODEL_RUN_ID', None)
     
-    # Load model WITHOUT scaler (training code shows no scaler was used)
-    predictor = VolatilityPredictor(
-        str(model_path),
-        scaler_path=None,  # xgb_model.pkl was trained without a scaler
-        model_type="ml"
-    )
+    loaded_from = None
+    mlflow_model = None
+    scaler = None
     
-    # Set model version from file modification time
-    model_version = f"xgb-{int(model_path.stat().st_mtime)}"
+    try:
+        # Priority 1: Load from MLflow Model Registry (if MODEL_VARIANT is set)
+        if model_variant and model_variant.startswith('models:/'):
+            logger.info(f"Loading model from MLflow Model Registry: {model_variant}")
+            try:
+                mlflow_model = mlflow.pyfunc.load_model(model_variant)
+                model_version = model_variant
+                loaded_from = "mlflow_registry"
+                logger.info(f"✅ Loaded model from Model Registry: {model_variant}")
+            except Exception as e:
+                logger.warning(f"Failed to load from Model Registry {model_variant}: {e}")
+                logger.info("Falling back to MLflow runs...")
+        
+        # Priority 2: Load from specific MLflow run ID
+        if mlflow_model is None and model_run_id:
+            logger.info(f"Loading model from MLflow run ID: {model_run_id}")
+            try:
+                run = mlflow.get_run(model_run_id)
+                model_uri = f"runs:/{model_run_id}/model"
+                mlflow_model = mlflow.sklearn.load_model(model_uri)
+                model_version = f"run-{model_run_id}"
+                loaded_from = "mlflow_run_id"
+                logger.info(f"✅ Loaded model from run ID: {model_run_id}")
+            except Exception as e:
+                logger.warning(f"Failed to load from run ID {model_run_id}: {e}")
+        
+        # Priority 3: Load from latest MLflow run by run_name
+        if mlflow_model is None:
+            logger.info(f"Searching for latest MLflow run with name: {model_run_name}")
+            try:
+                mlflow.set_experiment(experiment_name)
+                experiment = mlflow.get_experiment_by_name(experiment_name)
+                
+                if experiment is None:
+                    raise ValueError(f"Experiment '{experiment_name}' not found in MLflow")
+                
+                # Search for runs with matching run_name
+                runs = mlflow.search_runs(
+                    experiment_ids=[experiment.experiment_id],
+                    filter_string=f"tags.mlflow.runName = '{model_run_name}'",
+                    order_by=["start_time DESC"],
+                    max_results=1
+                )
+                
+                if len(runs) > 0:
+                    run_id = runs.iloc[0]['run_id']
+                    run = mlflow.get_run(run_id)
+                    model_uri = f"runs:/{run_id}/model"
+                    
+                    # Try to load as sklearn model (works for XGBoost wrapped in sklearn)
+                    try:
+                        mlflow_model = mlflow.sklearn.load_model(model_uri)
+                    except:
+                        # Fallback to pyfunc
+                        mlflow_model = mlflow.pyfunc.load_model(model_uri)
+                    
+                    model_version = f"run-{run_id}"
+                    loaded_from = "mlflow_run"
+                    logger.info(f"✅ Loaded model from MLflow run: {run_id} (name: {model_run_name})")
+                else:
+                    logger.warning(f"No runs found with name '{model_run_name}' in experiment '{experiment_name}'")
+            except Exception as e:
+                logger.warning(f"Failed to load from MLflow runs: {e}")
+                logger.info("Falling back to local pickle file...")
+        
+        # Priority 4: Fallback to local pickle file (backward compatibility)
+        if mlflow_model is None:
+            logger.info("Loading model from local pickle file (fallback)")
+            models_dir = Path(config['modeling']['models_dir'])
+            model_path = models_dir / "xgb_model.pkl"
+            
+            if not model_path.exists():
+                raise FileNotFoundError(
+                    f"Model not found. Tried:\n"
+                    f"  1. MLflow Model Registry: {model_variant or 'not set'}\n"
+                    f"  2. MLflow Run: {model_run_name}\n"
+                    f"  3. Local file: {model_path}\n"
+                    f"Please ensure MODEL_VARIANT is set or train a model first."
+                )
+            
+            # Load from local pickle
+            predictor = VolatilityPredictor(
+                str(model_path),
+                scaler_path=None,  # xgb_model.pkl was trained without a scaler
+                model_type="ml"
+            )
+            model_version = f"local-{int(model_path.stat().st_mtime)}"
+            loaded_from = "local_pickle"
+            logger.info(f"✅ Loaded model from local file: {model_path}")
+        
+        else:
+            # Create a wrapper for MLflow-loaded models
+            # MLflow models loaded via sklearn/pyfunc can be used directly
+            logger.info("Creating MLflow model wrapper")
+            
+            class MLflowVolatilityPredictor:
+                """Wrapper to make MLflow models compatible with VolatilityPredictor interface."""
+                def __init__(self, mlflow_model, model_version_str):
+                    self.model = mlflow_model
+                    self.model_version = model_version_str
+                    self.scaler = None  # MLflow models may have scaler baked in
+                    self.model_type = 'ml'
+                
+                def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+                    """Predict probabilities using MLflow model."""
+                    # MLflow models expect DataFrame input
+                    try:
+                        if hasattr(self.model, 'predict_proba'):
+                            # sklearn-style model (XGBoost wrapped in sklearn)
+                            proba = self.model.predict_proba(X)
+                            # Ensure 2D array with 2 columns
+                            if proba.shape[1] == 1:
+                                # If only one column, assume it's probability of class 1
+                                proba = np.column_stack([1 - proba[:, 0], proba[:, 0]])
+                            return proba
+                        elif hasattr(self.model, 'predict'):
+                            # pyfunc model - try to get probabilities
+                            predictions = self.model.predict(X)
+                            # If predictions are probabilities (2D array), return as-is
+                            if isinstance(predictions, np.ndarray) and len(predictions.shape) == 2:
+                                return predictions
+                            # Otherwise convert binary predictions to probabilities
+                            proba = np.zeros((len(predictions), 2))
+                            proba[:, 1] = predictions
+                            proba[:, 0] = 1 - predictions
+                            return proba
+                        else:
+                            raise ValueError("MLflow model doesn't have predict or predict_proba method")
+                    except Exception as e:
+                        logger.error(f"Error in MLflow model prediction: {e}")
+                        raise
+            
+            # Create wrapper
+            predictor = MLflowVolatilityPredictor(mlflow_model, model_version)
+            logger.info(f"✅ Created MLflow model wrapper (loaded from: {loaded_from})")
+    
+    except Exception as e:
+        logger.error(f"Failed to load model: {e}", exc_info=True)
+        raise
+    
     model_loaded_at = time.time()
     load_time = model_loaded_at - start_time
     MODEL_LOAD_TIME.set(load_time)
     
-    logger.info(f"Loaded model from {model_path} (version: {model_version}) in {load_time:.3f}s")
+    logger.info(f"✅ Model loaded successfully from {loaded_from} (version: {model_version}) in {load_time:.3f}s")
     
     return predictor
 

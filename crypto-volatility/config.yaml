@@ -4,8 +4,10 @@ kafka:
   bootstrap_servers: "localhost:9092"
   topic_raw: "ticks.raw"
   topic_features: "ticks.features"
+  topic_predictions: "ticks.predictions"
   consumer_group: "volatility-pipeline"
   features_consumer_group: "feature-engine"
+  prediction_consumer_group: "volatility-predictor"
 
 coinbase:
   ws_url: "wss://advanced-trade-ws.coinbase.com"
