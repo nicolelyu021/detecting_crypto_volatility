@@ -294,7 +294,9 @@ async def startup_event():
         logger.info("API startup complete")
     except Exception as e:
         logger.error(f"Failed to load model on startup: {e}", exc_info=True)
-        logger.warning("API will start without model. Health endpoint will return 503 until model is loaded.")
+        logger.warning(
+            "API will start without model. Health endpoint will return 503 until model is loaded."
+        )
         # Don't raise - allow API to start without model for testing
 
 
@@ -369,7 +371,9 @@ async def predict(features: FeatureRequest):
         # Create DataFrame - VolatilityPredictor will map to model's expected features
         df = pd.DataFrame([feature_vector])
 
-        logger.debug(f"Created feature vector with {len(feature_vector)} features: {list(feature_vector.keys())}")
+        logger.debug(
+            f"Created feature vector with {len(feature_vector)} features: {list(feature_vector.keys())}"
+        )
 
         # Get prediction probability
         probabilities = predictor.predict_proba(df)
