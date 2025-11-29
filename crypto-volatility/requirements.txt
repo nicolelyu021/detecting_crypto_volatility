@@ -18,7 +18,7 @@ xgboost>=2.0.0
 imbalanced-learn>=0.11.0  # For SMOTE and class balancing
 
 # Monitoring and reporting
-evidently==0.4.15
+evidently>=0.4.16  # 0.4.16+ supports pydantic>=2.0.0
 
 # Logging and utilities
 structlog==23.2.0

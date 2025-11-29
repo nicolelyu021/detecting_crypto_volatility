@@ -48,7 +48,6 @@ jobs:
         run: |
           cd crypto-volatility
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx
       
       - name: Run integration test
         run: |
