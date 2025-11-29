@@ -20,26 +20,21 @@ async def make_request(client: httpx.AsyncClient, url: str, payload: Dict) -> Di
         response = await client.post(url, json=payload, timeout=30.0)
         latency = time.time() - start_time
         return {
-            'status_code': response.status_code,
-            'latency': latency,
-            'success': response.status_code == 200,
-            'error': None
+            "status_code": response.status_code,
+            "latency": latency,
+            "success": response.status_code == 200,
+            "error": None,
         }
     except Exception as e:
         latency = time.time() - start_time
-        return {
-            'status_code': None,
-            'latency': latency,
-            'success': False,
-            'error': str(e)
-        }
+        return {"status_code": None, "latency": latency, "success": False, "error": str(e)}
 
 
 async def run_load_test(base_url: str, num_requests: int = 100):
     """Run load test with burst requests."""
     print(f"Starting load test: {num_requests} requests to {base_url}/predict")
     print("=" * 60)
-    
+
     # Sample feature payload
     payload = {
         "price": 50000.0,
@@ -52,35 +47,35 @@ async def run_load_test(base_url: str, num_requests: int = 100):
         "trade_intensity": 2.5,
         "spread_abs": 1.0,
         "spread_rel": 0.00002,
-        "order_book_imbalance": 0.1
+        "order_book_imbalance": 0.1,
     }
-    
+
     url = f"{base_url}/predict"
     results: List[Dict] = []
-    
+
     # Create async client with connection pooling
     async with httpx.AsyncClient() as client:
         # Send all requests concurrently (burst)
         print(f"Sending {num_requests} concurrent requests...")
         start_time = time.time()
-        
+
         tasks = [make_request(client, url, payload) for _ in range(num_requests)]
         results = await asyncio.gather(*tasks)
-        
+
         total_time = time.time() - start_time
-    
+
     # Analyze results
-    latencies = [r['latency'] for r in results]
-    successes = [r for r in results if r['success']]
-    failures = [r for r in results if not r['success']]
-    
+    latencies = [r["latency"] for r in results]
+    successes = [r for r in results if r["success"]]
+    failures = [r for r in results if not r["success"]]
+
     # Calculate statistics
     if latencies:
         mean_latency = statistics.mean(latencies)
         median_latency = statistics.median(latencies)
         min_latency = min(latencies)
         max_latency = max(latencies)
-        
+
         if len(latencies) > 1:
             stdev_latency = statistics.stdev(latencies)
             p95_latency = sorted(latencies)[int(len(latencies) * 0.95)]
@@ -92,10 +87,10 @@ async def run_load_test(base_url: str, num_requests: int = 100):
     else:
         mean_latency = median_latency = min_latency = max_latency = 0.0
         stdev_latency = p95_latency = p99_latency = 0.0
-    
+
     success_rate = len(successes) / len(results) * 100 if results else 0.0
     requests_per_second = len(results) / total_time if total_time > 0 else 0.0
-    
+
     # Print report
     print("\n" + "=" * 60)
     print("LOAD TEST RESULTS")
@@ -113,71 +108,68 @@ async def run_load_test(base_url: str, num_requests: int = 100):
     print(f"  StdDev: {stdev_latency*1000:.2f} ms")
     print(f"  P95:    {p95_latency*1000:.2f} ms")
     print(f"  P99:    {p99_latency*1000:.2f} ms")
-    
+
     if failures:
         print("\nFailures:")
         error_counts = {}
         for f in failures:
-            error = f.get('error', f"HTTP {f.get('status_code', 'unknown')}")
+            error = f.get("error", f"HTTP {f.get('status_code', 'unknown')}")
             error_counts[error] = error_counts.get(error, 0) + 1
         for error, count in error_counts.items():
             print(f"  {error}: {count}")
-    
+
     print("=" * 60)
-    
+
     # Save detailed report to file
     report_file = "load_test_report.json"
     report = {
-        'timestamp': time.time(),
-        'num_requests': num_requests,
-        'total_time': total_time,
-        'success_rate': success_rate,
-        'requests_per_second': requests_per_second,
-        'latency_stats': {
-            'mean': mean_latency,
-            'median': median_latency,
-            'min': min_latency,
-            'max': max_latency,
-            'stdev': stdev_latency,
-            'p95': p95_latency,
-            'p99': p99_latency
+        "timestamp": time.time(),
+        "num_requests": num_requests,
+        "total_time": total_time,
+        "success_rate": success_rate,
+        "requests_per_second": requests_per_second,
+        "latency_stats": {
+            "mean": mean_latency,
+            "median": median_latency,
+            "min": min_latency,
+            "max": max_latency,
+            "stdev": stdev_latency,
+            "p95": p95_latency,
+            "p99": p99_latency,
         },
-        'success_count': len(successes),
-        'failure_count': len(failures),
-        'failures': failures[:10]  # Include first 10 failures for debugging
+        "success_count": len(successes),
+        "failure_count": len(failures),
+        "failures": failures[:10],  # Include first 10 failures for debugging
     }
-    
-    with open(report_file, 'w') as f:
+
+    with open(report_file, "w") as f:
         json.dump(report, f, indent=2)
-    
+
     print(f"\nDetailed report saved to: {report_file}")
-    
+
     return report
 
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description='Load test the volatility prediction API')
+    parser = argparse.ArgumentParser(description="Load test the volatility prediction API")
     parser.add_argument(
-        '--url',
+        "--url",
         type=str,
-        default='http://localhost:8000',
-        help='Base URL of the API (default: http://localhost:8000)'
+        default="http://localhost:8000",
+        help="Base URL of the API (default: http://localhost:8000)",
     )
     parser.add_argument(
-        '--requests',
-        type=int,
-        default=100,
-        help='Number of requests to send (default: 100)'
+        "--requests", type=int, default=100, help="Number of requests to send (default: 100)"
     )
-    
+
     args = parser.parse_args()
-    
+
     try:
         report = asyncio.run(run_load_test(args.url, args.requests))
-        
+
         # Exit with error code if success rate is too low
-        if report['success_rate'] < 95.0:
+        if report["success_rate"] < 95.0:
             print(f"\n⚠️  Warning: Success rate is {report['success_rate']:.1f}% (below 95%)")
             exit(1)
         else:
@@ -193,4 +185,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

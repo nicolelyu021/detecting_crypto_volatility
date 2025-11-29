@@ -9,36 +9,38 @@ from datetime import datetime
 from pathlib import Path
 
 
-def generate_report(json_file: str = "load_test_report.json", output_file: str = "LATENCY_REPORT.md"):
+def generate_report(
+    json_file: str = "load_test_report.json", output_file: str = "LATENCY_REPORT.md"
+):
     """Generate a brief markdown report from load test JSON."""
-    
+
     # Load JSON report
     report_path = Path(json_file)
     if not report_path.exists():
         print(f"Error: {json_file} not found. Run load_test.py first.")
         sys.exit(1)
-    
-    with open(report_path, 'r') as f:
+
+    with open(report_path, "r") as f:
         report = json.load(f)
-    
+
     # Extract data
-    timestamp = datetime.fromtimestamp(report['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
-    num_requests = report['num_requests']
-    success_rate = report['success_rate']
-    total_time = report['total_time']
-    rps = report['requests_per_second']
-    
-    stats = report['latency_stats']
-    mean_ms = stats['mean'] * 1000
-    median_ms = stats['median'] * 1000
-    min_ms = stats['min'] * 1000
-    max_ms = stats['max'] * 1000
-    p95_ms = stats['p95'] * 1000
-    p99_ms = stats['p99'] * 1000
-    
-    success_count = report['success_count']
-    failure_count = report['failure_count']
-    
+    timestamp = datetime.fromtimestamp(report["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
+    num_requests = report["num_requests"]
+    success_rate = report["success_rate"]
+    total_time = report["total_time"]
+    rps = report["requests_per_second"]
+
+    stats = report["latency_stats"]
+    mean_ms = stats["mean"] * 1000
+    median_ms = stats["median"] * 1000
+    min_ms = stats["min"] * 1000
+    max_ms = stats["max"] * 1000
+    p95_ms = stats["p95"] * 1000
+    p99_ms = stats["p99"] * 1000
+
+    success_count = report["success_count"]
+    failure_count = report["failure_count"]
+
     # Generate markdown
     markdown = f"""# Load Test Latency Report
 
@@ -79,11 +81,11 @@ The API successfully handled {num_requests} concurrent requests with:
 
 {"⚠️ **Note:** Some requests failed. Check load_test_report.json for details." if failure_count > 0 else "✅ All requests succeeded."}
 """
-    
+
     # Write to file
-    with open(output_file, 'w') as f:
+    with open(output_file, "w") as f:
         f.write(markdown)
-    
+
     print(f"✅ Latency report generated: {output_file}")
     print(f"\nPreview:")
     print("=" * 60)
@@ -93,21 +95,22 @@ The API successfully handled {num_requests} concurrent requests with:
 
 if __name__ == "__main__":
     import argparse
-    
-    parser = argparse.ArgumentParser(description='Generate markdown latency report from load test JSON')
-    parser.add_argument(
-        '--input',
-        type=str,
-        default='load_test_report.json',
-        help='Input JSON file (default: load_test_report.json)'
+
+    parser = argparse.ArgumentParser(
+        description="Generate markdown latency report from load test JSON"
     )
     parser.add_argument(
-        '--output',
+        "--input",
         type=str,
-        default='LATENCY_REPORT.md',
-        help='Output markdown file (default: LATENCY_REPORT.md)'
+        default="load_test_report.json",
+        help="Input JSON file (default: load_test_report.json)",
     )
-    
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="LATENCY_REPORT.md",
+        help="Output markdown file (default: LATENCY_REPORT.md)",
+    )
+
     args = parser.parse_args()
     generate_report(args.input, args.output)
-

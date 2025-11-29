@@ -29,15 +29,14 @@ load_dotenv()
 
 # Setup logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 
 class PredictionConsumer:
     """Kafka consumer that makes real-time volatility predictions."""
-    
+
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize the prediction consumer."""
         self.config = self._load_config(config_path)
@@ -45,44 +44,46 @@ class PredictionConsumer:
         self.producer: Optional[Producer] = None
         self.predictor: Optional[VolatilityPredictor] = None
         self.running = False
-        
+
         # Statistics
         self.messages_processed = 0
         self.predictions_made = 0
         self.errors = 0
         self.start_time = None
-        
+
     def _load_config(self, config_path: str) -> Dict:
         """Load configuration from YAML file."""
         config_file = Path(config_path)
         if not config_file.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
-        
-        with open(config_file, 'r') as f:
+
+        with open(config_file, "r") as f:
             return yaml.safe_load(f)
-    
+
     def _load_model(self):
         """Load the volatility prediction model."""
         logger.info("Loading prediction model...")
-        
+
         # Try to load from MLflow first (same logic as API)
-        model_variant = os.getenv('MODEL_VARIANT')
-        model_run_id = os.getenv('MODEL_RUN_ID')
-        model_run_name = os.getenv('MODEL_RUN_NAME')
-        
+        model_variant = os.getenv("MODEL_VARIANT")
+        model_run_id = os.getenv("MODEL_RUN_ID")
+        model_run_name = os.getenv("MODEL_RUN_NAME")
+
         mlflow_model = None
         model_version = "unknown"
         loaded_from = "unknown"
-        
+
         try:
             import mlflow
             import mlflow.sklearn
             import mlflow.xgboost
-            
+
             # Allow override from environment variable (useful for Docker)
-            mlflow_tracking_uri = os.getenv('MLFLOW_TRACKING_URI', self.config['mlflow']['tracking_uri'])
+            mlflow_tracking_uri = os.getenv(
+                "MLFLOW_TRACKING_URI", self.config["mlflow"]["tracking_uri"]
+            )
             mlflow.set_tracking_uri(mlflow_tracking_uri)
-            
+
             if model_variant:
                 # Load from Model Registry (e.g., "models:/xgb_model/Production")
                 logger.info(f"Loading model from MLflow Model Registry: {model_variant}")
@@ -97,28 +98,28 @@ class PredictionConsumer:
                 loaded_from = "mlflow_run_id"
             elif model_run_name:
                 # Find run by name
-                experiment = mlflow.get_experiment_by_name(self.config['mlflow']['experiment_name'])
+                experiment = mlflow.get_experiment_by_name(self.config["mlflow"]["experiment_name"])
                 if experiment:
                     runs = mlflow.search_runs(
                         experiment_ids=[experiment.experiment_id],
                         filter_string=f"tags.mlflow.runName = '{model_run_name}'",
                         order_by=["start_time DESC"],
-                        max_results=1
+                        max_results=1,
                     )
                     if not runs.empty:
-                        run_id = runs.iloc[0]['run_id']
+                        run_id = runs.iloc[0]["run_id"]
                         mlflow_model = mlflow.pyfunc.load_model(f"runs:/{run_id}/model")
                         model_version = f"run-{run_id[:8]}"
                         loaded_from = "mlflow_run_name"
         except Exception as e:
             logger.warning(f"Could not load model from MLflow: {e}")
-        
+
         # Fallback to local pickle file
         if mlflow_model is None:
             logger.info("Loading model from local pickle file (fallback)")
-            models_dir = Path(self.config['modeling']['models_dir'])
+            models_dir = Path(self.config["modeling"]["models_dir"])
             model_path = models_dir / "xgb_model.pkl"
-            
+
             if not model_path.exists():
                 raise FileNotFoundError(
                     f"Model not found. Tried:\n"
@@ -127,12 +128,12 @@ class PredictionConsumer:
                     f"  3. Local file: {model_path}\n"
                     f"Please ensure MODEL_VARIANT is set or train a model first."
                 )
-            
+
             # Load from local pickle
             self.predictor = VolatilityPredictor(
                 str(model_path),
                 scaler_path=None,  # xgb_model.pkl was trained without a scaler
-                model_type="ml"
+                model_type="ml",
             )
             model_version = f"local-{int(model_path.stat().st_mtime)}"
             loaded_from = "local_pickle"
@@ -140,24 +141,25 @@ class PredictionConsumer:
         else:
             # Create a wrapper for MLflow-loaded models
             logger.info("Creating MLflow model wrapper")
-            
+
             class MLflowVolatilityPredictor:
                 """Wrapper to make MLflow models compatible with VolatilityPredictor interface."""
+
                 def __init__(self, mlflow_model, model_version_str):
                     self.model = mlflow_model
                     self.model_version = model_version_str
                     self.scaler = None
-                    self.model_type = 'ml'
-                
+                    self.model_type = "ml"
+
                 def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
                     """Predict probabilities using MLflow model."""
                     try:
-                        if hasattr(self.model, 'predict_proba'):
+                        if hasattr(self.model, "predict_proba"):
                             proba = self.model.predict_proba(X)
                             if proba.shape[1] == 1:
                                 proba = np.column_stack([1 - proba[:, 0], proba[:, 0]])
                             return proba
-                        elif hasattr(self.model, 'predict'):
+                        elif hasattr(self.model, "predict"):
                             predictions = self.model.predict(X)
                             if isinstance(predictions, np.ndarray) and len(predictions.shape) == 2:
                                 return predictions
@@ -166,204 +168,219 @@ class PredictionConsumer:
                             proba[:, 0] = 1 - predictions
                             return proba
                         else:
-                            raise ValueError("MLflow model doesn't have predict or predict_proba method")
+                            raise ValueError(
+                                "MLflow model doesn't have predict or predict_proba method"
+                            )
                     except Exception as e:
                         logger.error(f"Error in MLflow model prediction: {e}")
                         raise
-            
+
             # Create wrapper
             self.predictor = MLflowVolatilityPredictor(mlflow_model, model_version)
             logger.info(f"✅ Created MLflow model wrapper (loaded from: {loaded_from})")
-        
-        logger.info(f"✅ Model loaded successfully (version: {model_version}, source: {loaded_from})")
-    
+
+        logger.info(
+            f"✅ Model loaded successfully (version: {model_version}, source: {loaded_from})"
+        )
+
     def _create_kafka_consumer(self) -> Consumer:
         """Create Kafka consumer for feature messages with reconnect logic."""
         # Allow override from environment variable (useful for Docker)
-        bootstrap_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', self.config['kafka']['bootstrap_servers'])
-        topic = self.config['kafka']['topic_features']
-        consumer_group = self.config['kafka'].get('prediction_consumer_group', 'volatility-predictor')
-        
+        bootstrap_servers = os.getenv(
+            "KAFKA_BOOTSTRAP_SERVERS", self.config["kafka"]["bootstrap_servers"]
+        )
+        topic = self.config["kafka"]["topic_features"]
+        consumer_group = self.config["kafka"].get(
+            "prediction_consumer_group", "volatility-predictor"
+        )
+
         consumer_config = {
-            'bootstrap.servers': bootstrap_servers,
-            'group.id': consumer_group,
-            'auto.offset.reset': 'latest',  # Start from latest messages
-            'enable.auto.commit': True,
-            'auto.commit.interval.ms': 5000,
-            'session.timeout.ms': 30000,
-            'max.poll.interval.ms': 300000,
-            'socket.keepalive.enable': True,  # Keep connections alive
-            'reconnect.backoff.ms': 100,  # Initial reconnect backoff
-            'reconnect.backoff.max.ms': 10000,  # Max reconnect backoff
-            'metadata.request.timeout.ms': 30000,  # Metadata request timeout
-            'request.timeout.ms': 30000,  # Request timeout
+            "bootstrap.servers": bootstrap_servers,
+            "group.id": consumer_group,
+            "auto.offset.reset": "latest",  # Start from latest messages
+            "enable.auto.commit": True,
+            "auto.commit.interval.ms": 5000,
+            "session.timeout.ms": 30000,
+            "max.poll.interval.ms": 300000,
+            "socket.keepalive.enable": True,  # Keep connections alive
+            "reconnect.backoff.ms": 100,  # Initial reconnect backoff
+            "reconnect.backoff.max.ms": 10000,  # Max reconnect backoff
+            "metadata.request.timeout.ms": 30000,  # Metadata request timeout
+            "request.timeout.ms": 30000,  # Request timeout
         }
-        
+
         consumer = Consumer(consumer_config)
         consumer.subscribe([topic])
-        
+
         logger.info(f"Created Kafka consumer for topic '{topic}' (group: {consumer_group})")
         return consumer
-    
+
     def _create_kafka_producer(self) -> Producer:
         """Create Kafka producer for prediction results with retry logic."""
         # Allow override from environment variable (useful for Docker)
-        bootstrap_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', self.config['kafka']['bootstrap_servers'])
-        
+        bootstrap_servers = os.getenv(
+            "KAFKA_BOOTSTRAP_SERVERS", self.config["kafka"]["bootstrap_servers"]
+        )
+
         producer_config = {
-            'bootstrap.servers': bootstrap_servers,
-            'acks': 'all',
-            'retries': 10,  # Increased retries for resilience
-            'retry.backoff.ms': 1000,  # 1 second backoff between retries
-            'compression.type': 'snappy',
-            'socket.keepalive.enable': True,  # Keep connections alive
-            'reconnect.backoff.ms': 100,  # Initial reconnect backoff
-            'reconnect.backoff.max.ms': 10000,  # Max reconnect backoff
-            'message.send.max.retries': 10,  # Max retries per message
-            'request.timeout.ms': 30000,  # Request timeout
-            'delivery.timeout.ms': 120000,  # Total delivery timeout
+            "bootstrap.servers": bootstrap_servers,
+            "acks": "all",
+            "retries": 10,  # Increased retries for resilience
+            "retry.backoff.ms": 1000,  # 1 second backoff between retries
+            "compression.type": "snappy",
+            "socket.keepalive.enable": True,  # Keep connections alive
+            "reconnect.backoff.ms": 100,  # Initial reconnect backoff
+            "reconnect.backoff.max.ms": 10000,  # Max reconnect backoff
+            "message.send.max.retries": 10,  # Max retries per message
+            "request.timeout.ms": 30000,  # Request timeout
+            "delivery.timeout.ms": 120000,  # Total delivery timeout
         }
-        
+
         producer = Producer(producer_config)
         logger.info(f"Created Kafka producer for {bootstrap_servers}")
         return producer
-    
+
     def _process_feature_message(self, message_value: bytes) -> Optional[Dict]:
         """Process a feature message and make a prediction."""
         try:
             # Parse JSON message
-            feature_data = json.loads(message_value.decode('utf-8'))
-            
+            feature_data = json.loads(message_value.decode("utf-8"))
+
             # Extract features (same logic as /predict endpoint)
-            price = feature_data.get('price', 0.0)
-            midprice = feature_data.get('midprice', price)
-            
+            price = feature_data.get("price", 0.0)
+            midprice = feature_data.get("midprice", price)
+
             # Get return features
-            return_1s = feature_data.get('return_1s', 0.0) or 0.0
-            return_5s = feature_data.get('return_5s', 0.0) or 0.0
-            return_30s = feature_data.get('return_30s', 0.0) or 0.0
-            return_60s = feature_data.get('return_60s', 0.0) or 0.0
-            
+            return_1s = feature_data.get("return_1s", 0.0) or 0.0
+            return_5s = feature_data.get("return_5s", 0.0) or 0.0
+            return_30s = feature_data.get("return_30s", 0.0) or 0.0
+            return_60s = feature_data.get("return_60s", 0.0) or 0.0
+
             # Compute derived features (same as /predict endpoint)
-            returns = [r for r in [return_1s, return_5s, return_30s, return_60s] 
-                      if r is not None and not np.isnan(r) and r != 0.0]
-            
+            returns = [
+                r
+                for r in [return_1s, return_5s, return_30s, return_60s]
+                if r is not None and not np.isnan(r) and r != 0.0
+            ]
+
             if len(returns) > 0:
                 midprice_return_mean = float(np.mean(returns))
                 midprice_return_std = float(np.std(returns)) if len(returns) > 1 else 0.0
             else:
                 midprice_return_mean = 0.0
-                midprice_return_std = feature_data.get('volatility', 0.0) or 0.0
-            
-            bid_ask_spread = feature_data.get('spread_abs', 0.0) or 0.0
-            trade_intensity = feature_data.get('trade_intensity', 0.0) or 0.0
-            order_book_imbalance = feature_data.get('order_book_imbalance', 0.0) or 0.0
-            
+                midprice_return_std = feature_data.get("volatility", 0.0) or 0.0
+
+            bid_ask_spread = feature_data.get("spread_abs", 0.0) or 0.0
+            trade_intensity = feature_data.get("trade_intensity", 0.0) or 0.0
+            order_book_imbalance = feature_data.get("order_book_imbalance", 0.0) or 0.0
+
             # Create feature vector (exactly what model expects)
             feature_vector = {
-                'midprice_return_mean': midprice_return_mean,
-                'midprice_return_std': midprice_return_std,
-                'bid_ask_spread': bid_ask_spread,
-                'trade_intensity': trade_intensity,
-                'order_book_imbalance': order_book_imbalance
+                "midprice_return_mean": midprice_return_mean,
+                "midprice_return_std": midprice_return_std,
+                "bid_ask_spread": bid_ask_spread,
+                "trade_intensity": trade_intensity,
+                "order_book_imbalance": order_book_imbalance,
             }
-            
+
             # Create DataFrame
-            df = pd.DataFrame([feature_vector], columns=[
-                'midprice_return_mean',
-                'midprice_return_std',
-                'bid_ask_spread',
-                'trade_intensity',
-                'order_book_imbalance'
-            ])
-            
+            df = pd.DataFrame(
+                [feature_vector],
+                columns=[
+                    "midprice_return_mean",
+                    "midprice_return_std",
+                    "bid_ask_spread",
+                    "trade_intensity",
+                    "order_book_imbalance",
+                ],
+            )
+
             # Make prediction
             probabilities = self.predictor.predict_proba(df)
             prob_value = probabilities[0, 1] if probabilities.shape[1] > 1 else probabilities[0, 0]
-            
+
             # Binary prediction (threshold = 0.5)
             threshold = 0.5
             prediction = 1 if prob_value >= threshold else 0
-            
+
             # Create prediction result
             prediction_result = {
-                'timestamp': time.time(),
-                'product_id': feature_data.get('product_id', 'unknown'),
-                'price': price,
-                'midprice': midprice,
-                'prediction': prediction,
-                'probability': float(prob_value),
-                'threshold': threshold,
-                'features': feature_vector,
-                'model_version': getattr(self.predictor, 'model_version', 'unknown')
+                "timestamp": time.time(),
+                "product_id": feature_data.get("product_id", "unknown"),
+                "price": price,
+                "midprice": midprice,
+                "prediction": prediction,
+                "probability": float(prob_value),
+                "threshold": threshold,
+                "features": feature_vector,
+                "model_version": getattr(self.predictor, "model_version", "unknown"),
             }
-            
+
             return prediction_result
-            
+
         except Exception as e:
             logger.error(f"Error processing feature message: {e}", exc_info=True)
             return None
-    
+
     def _publish_prediction(self, prediction: Dict):
         """Publish prediction result to Kafka."""
-        topic = self.config['kafka'].get('topic_predictions', 'ticks.predictions')
-        product_id = prediction.get('product_id', '').encode('utf-8') if prediction.get('product_id') else None
-        
-        value = json.dumps(prediction).encode('utf-8')
-        
+        topic = self.config["kafka"].get("topic_predictions", "ticks.predictions")
+        product_id = (
+            prediction.get("product_id", "").encode("utf-8")
+            if prediction.get("product_id")
+            else None
+        )
+
+        value = json.dumps(prediction).encode("utf-8")
+
         def delivery_callback(err, msg):
             if err:
                 logger.error(f"Failed to deliver prediction message: {err}")
-        
+
         try:
-            self.producer.produce(
-                topic,
-                value=value,
-                key=product_id,
-                callback=delivery_callback
-            )
+            self.producer.produce(topic, value=value, key=product_id, callback=delivery_callback)
             self.producer.poll(0)
         except Exception as e:
             logger.error(f"Error publishing prediction to Kafka: {e}")
-    
+
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals."""
         logger.info(f"Received signal {signum}, shutting down...")
         self.running = False
-    
+
     def start(self):
         """Start the prediction consumer."""
         logger.info("Starting prediction consumer...")
-        
+
         # Load model
         self._load_model()
-        
+
         # Create Kafka consumer and producer
         self.consumer = self._create_kafka_consumer()
         self.producer = self._create_kafka_producer()
-        
+
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
-        
+
         self.running = True
         self.start_time = time.time()
-        
+
         logger.info("✅ Prediction consumer started. Waiting for messages...")
-        
+
         reconnect_attempts = 0
         max_reconnect_attempts = 10
         reconnect_delay = 5
-        
+
         try:
             while self.running:
                 try:
                     # Poll for messages (timeout = 1 second)
                     msg = self.consumer.poll(timeout=1.0)
-                    
+
                     if msg is None:
                         continue
-                    
+
                     if msg.error():
                         if msg.error().code() == KafkaError._PARTITION_EOF:
                             # End of partition - continue polling
@@ -373,8 +390,12 @@ class PredictionConsumer:
                             logger.error(f"Kafka transport error: {msg.error()}")
                             reconnect_attempts += 1
                             if reconnect_attempts <= max_reconnect_attempts:
-                                delay = min(reconnect_delay * (2 ** min(reconnect_attempts - 1, 5)), 60)
-                                logger.info(f"Reconnecting to Kafka in {delay:.1f} seconds... (attempt {reconnect_attempts})")
+                                delay = min(
+                                    reconnect_delay * (2 ** min(reconnect_attempts - 1, 5)), 60
+                                )
+                                logger.info(
+                                    f"Reconnecting to Kafka in {delay:.1f} seconds... (attempt {reconnect_attempts})"
+                                )
                                 time.sleep(delay)
                                 # Recreate consumer
                                 try:
@@ -392,18 +413,18 @@ class PredictionConsumer:
                             logger.error(f"Consumer error: {msg.error()}")
                             self.errors += 1
                             continue
-                    
+
                     # Reset reconnect attempts on successful message
                     reconnect_attempts = 0
-                    
+
                     # Process message
                     self.messages_processed += 1
                     prediction = self._process_feature_message(msg.value())
-                    
+
                     if prediction:
                         self.predictions_made += 1
                         self._publish_prediction(prediction)
-                        
+
                         # Log periodically
                         if self.predictions_made % 100 == 0:
                             elapsed = time.time() - self.start_time
@@ -415,25 +436,25 @@ class PredictionConsumer:
                             )
                     else:
                         self.errors += 1
-                
+
                 except Exception as e:
                     logger.error(f"Error in consumer loop: {e}", exc_info=True)
                     self.errors += 1
                     # Continue running unless it's a fatal error
                     time.sleep(1)  # Brief pause before retrying
-                
+
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
         except Exception as e:
             logger.error(f"Fatal error in consumer loop: {e}", exc_info=True)
         finally:
             self._shutdown()
-    
+
     def _shutdown(self):
         """Shutdown the consumer gracefully."""
         logger.info("Shutting down prediction consumer...")
         self.running = False
-        
+
         # Close consumer gracefully
         if self.consumer:
             try:
@@ -443,7 +464,7 @@ class PredictionConsumer:
                 logger.info("Kafka consumer closed")
             except Exception as e:
                 logger.warning(f"Error closing consumer: {e}")
-        
+
         # Flush producer with retries
         if self.producer:
             try:
@@ -458,7 +479,7 @@ class PredictionConsumer:
                     logger.info("All messages flushed successfully")
             except Exception as e:
                 logger.error(f"Error flushing producer: {e}")
-        
+
         # Print statistics
         if self.start_time:
             elapsed = time.time() - self.start_time
@@ -478,18 +499,20 @@ class PredictionConsumer:
 def main():
     """Main entry point."""
     import argparse
-    
-    parser = argparse.ArgumentParser(description='Kafka consumer for real-time volatility predictions')
-    parser.add_argument(
-        '--config',
-        type=str,
-        default='config.yaml',
-        help='Path to config file (default: config.yaml)'
+
+    parser = argparse.ArgumentParser(
+        description="Kafka consumer for real-time volatility predictions"
     )
-    
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="config.yaml",
+        help="Path to config file (default: config.yaml)",
+    )
+
     args = parser.parse_args()
-    config_path = os.getenv('CONFIG_PATH', args.config)
-    
+    config_path = os.getenv("CONFIG_PATH", args.config)
+
     try:
         consumer = PredictionConsumer(config_path)
         consumer.start()
@@ -500,4 +523,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
