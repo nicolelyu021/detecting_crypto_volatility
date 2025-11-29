@@ -112,8 +112,8 @@ def load_model(config_path: str = "config.yaml"):
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
-    # Setup MLflow tracking URI
-    tracking_uri = config["mlflow"]["tracking_uri"]
+    # Setup MLflow tracking URI (allow override from environment variable for Docker)
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", config["mlflow"]["tracking_uri"])
     mlflow.set_tracking_uri(tracking_uri)
     experiment_name = config["mlflow"]["experiment_name"]
 
@@ -197,14 +197,17 @@ def load_model(config_path: str = "config.yaml"):
         if mlflow_model is None:
             logger.info("Loading model from local pickle file (fallback)")
             models_dir = Path(config["modeling"]["models_dir"])
-            model_path = models_dir / "xgb_model.pkl"
+            # Try xgboost_model.pkl first, then xgb_model.pkl for backward compatibility
+            model_path = models_dir / "xgboost_model.pkl"
+            if not model_path.exists():
+                model_path = models_dir / "xgb_model.pkl"
 
             if not model_path.exists():
                 raise FileNotFoundError(
                     f"Model not found. Tried:\n"
                     f"  1. MLflow Model Registry: {model_variant or 'not set'}\n"
                     f"  2. MLflow Run: {model_run_name}\n"
-                    f"  3. Local file: {model_path}\n"
+                    f"  3. Local files: {models_dir / 'xgboost_model.pkl'} or {models_dir / 'xgb_model.pkl'}\n"
                     f"Please ensure MODEL_VARIANT is set or train a model first."
                 )
 
@@ -291,7 +294,8 @@ async def startup_event():
         logger.info("API startup complete")
     except Exception as e:
         logger.error(f"Failed to load model on startup: {e}", exc_info=True)
-        raise
+        logger.warning("API will start without model. Health endpoint will return 503 until model is loaded.")
+        # Don't raise - allow API to start without model for testing
 
 
 @app.get("/health")
@@ -345,63 +349,27 @@ async def predict(features: FeatureRequest):
         if feature_dict.get("midprice") is None:
             feature_dict["midprice"] = feature_dict["price"]
 
-        # xgb_model.pkl expects exactly these 5 features (from training code):
-        # 1. midprice_return_mean
-        # 2. midprice_return_std
-        # 3. bid_ask_spread
-        # 4. trade_intensity
-        # 5. order_book_imbalance
-
-        # Compute midprice_return_mean and midprice_return_std from the return features
-        return_1s = feature_dict.get("return_1s", 0.0) or 0.0
-        return_5s = feature_dict.get("return_5s", 0.0) or 0.0
-        return_30s = feature_dict.get("return_30s", 0.0) or 0.0
-        return_60s = feature_dict.get("return_60s", 0.0) or 0.0
-
-        # Collect all non-zero returns for computing mean and std
-        returns = [
-            r
-            for r in [return_1s, return_5s, return_30s, return_60s]
-            if r is not None and not np.isnan(r) and r != 0.0
-        ]
-
-        if len(returns) > 0:
-            midprice_return_mean = float(np.mean(returns))
-            midprice_return_std = float(np.std(returns)) if len(returns) > 1 else 0.0
-        else:
-            # If no returns provided, use 0.0 (or could use volatility if available)
-            midprice_return_mean = 0.0
-            midprice_return_std = feature_dict.get("volatility", 0.0) or 0.0
-
-        # bid_ask_spread is the absolute spread
-        bid_ask_spread = feature_dict.get("spread_abs", 0.0) or 0.0
-
-        # trade_intensity and order_book_imbalance come directly from the request
-        trade_intensity = feature_dict.get("trade_intensity", 0.0) or 0.0
-        order_book_imbalance = feature_dict.get("order_book_imbalance", 0.0) or 0.0
-
-        # Create feature vector with EXACTLY the 5 features the model expects
+        # The model expects 11 features. Pass all features directly and let VolatilityPredictor
+        # handle the feature mapping based on what the model actually expects.
+        # Standard feature list (matches training code):
         feature_vector = {
-            "midprice_return_mean": midprice_return_mean,
-            "midprice_return_std": midprice_return_std,
-            "bid_ask_spread": bid_ask_spread,
-            "trade_intensity": trade_intensity,
-            "order_book_imbalance": order_book_imbalance,
+            "price": feature_dict.get("price", 0.0) or 0.0,
+            "midprice": feature_dict.get("midprice", feature_dict.get("price", 0.0)) or 0.0,
+            "return_1s": feature_dict.get("return_1s", 0.0) or 0.0,
+            "return_5s": feature_dict.get("return_5s", 0.0) or 0.0,
+            "return_30s": feature_dict.get("return_30s", 0.0) or 0.0,
+            "return_60s": feature_dict.get("return_60s", 0.0) or 0.0,
+            "volatility": feature_dict.get("volatility", 0.0) or 0.0,
+            "trade_intensity": feature_dict.get("trade_intensity", 0.0) or 0.0,
+            "spread_abs": feature_dict.get("spread_abs", 0.0) or 0.0,
+            "spread_rel": feature_dict.get("spread_rel", 0.0) or 0.0,
+            "order_book_imbalance": feature_dict.get("order_book_imbalance", 0.0) or 0.0,
         }
 
-        # Create DataFrame with exactly these 5 features in the correct order
-        df = pd.DataFrame(
-            [feature_vector],
-            columns=[
-                "midprice_return_mean",
-                "midprice_return_std",
-                "bid_ask_spread",
-                "trade_intensity",
-                "order_book_imbalance",
-            ],
-        )
+        # Create DataFrame - VolatilityPredictor will map to model's expected features
+        df = pd.DataFrame([feature_vector])
 
-        logger.debug(f"Created feature vector for xgb_model.pkl: {feature_vector}")
+        logger.debug(f"Created feature vector with {len(feature_vector)} features: {list(feature_vector.keys())}")
 
         # Get prediction probability
         probabilities = predictor.predict_proba(df)

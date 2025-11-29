@@ -35,7 +35,7 @@ services:
     image: ghcr.io/mlflow/mlflow:v2.8.1
     container_name: mlflow
     ports:
-      - "5000:5000"
+      - "5001:5000"  # Changed to 5001 to avoid conflict with macOS Universal Control
     environment:
       MLFLOW_BACKEND_STORE_URI: sqlite:///mlflow.db
       MLFLOW_DEFAULT_ARTIFACT_ROOT: /mlflow/artifacts
@@ -66,6 +66,7 @@ services:
     environment:
       CONFIG_PATH: /app/config.yaml
       PORT: 8000
+      MLFLOW_TRACKING_URI: "http://mlflow:5000"  # Use service name in Docker network
     volumes:
       - ../models:/app/models
       - ../config.yaml:/app/config.yaml

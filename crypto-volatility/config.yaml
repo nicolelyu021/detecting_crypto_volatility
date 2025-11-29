@@ -37,7 +37,7 @@ features:
     - 60  # 60 second returns
 
 mlflow:
-  tracking_uri: "http://localhost:5000"
+  tracking_uri: "http://localhost:5001"  # Changed from 5000 to avoid macOS Universal Control conflict
   experiment_name: "crypto-volatility-detection"
   artifact_root: "mlruns"  # Local artifact storage
 
