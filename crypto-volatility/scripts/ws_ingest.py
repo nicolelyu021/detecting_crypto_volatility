@@ -51,7 +51,9 @@ class CoinbaseWSIngestor:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         
     def _load_config(self, config_path: str) -> Dict:
-        """Load configuration from YAML file."""
+        """Load configuration from YAML file or environment variable."""
+        # Allow override from environment variable
+        config_path = os.getenv('CONFIG_PATH', config_path)
         config_file = Path(config_path)
         if not config_file.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
@@ -60,18 +62,29 @@ class CoinbaseWSIngestor:
             return yaml.safe_load(f)
     
     def _create_kafka_producer(self) -> Producer:
-        """Create and return a Kafka producer."""
-        bootstrap_servers = self.config['kafka']['bootstrap_servers']
+        """Create and return a Kafka producer with retry and reconnect logic."""
+        # Allow override from environment variable
+        bootstrap_servers = os.getenv(
+            'KAFKA_BOOTSTRAP_SERVERS',
+            self.config['kafka']['bootstrap_servers']
+        )
         logger.info(f"Connecting to Kafka at {bootstrap_servers}")
         
         # Confluent Kafka uses a config dictionary
         producer_config = {
             'bootstrap.servers': bootstrap_servers,
             'acks': 'all',
-            'retries': 3,
+            'retries': 10,  # Increased retries for resilience
+            'retry.backoff.ms': 1000,  # 1 second backoff between retries
             'max.in.flight.requests.per.connection': 1,
             'enable.idempotence': True,
-            'compression.type': 'snappy'
+            'compression.type': 'snappy',
+            'socket.keepalive.enable': True,  # Keep connections alive
+            'reconnect.backoff.ms': 100,  # Initial reconnect backoff
+            'reconnect.backoff.max.ms': 10000,  # Max reconnect backoff
+            'message.send.max.retries': 10,  # Max retries per message
+            'request.timeout.ms': 30000,  # Request timeout
+            'delivery.timeout.ms': 120000,  # Total delivery timeout
         }
         
         return Producer(producer_config)
@@ -219,26 +232,45 @@ class CoinbaseWSIngestor:
         logger.error(f"WebSocket error: {error}")
     
     def _on_close(self, ws, close_status_code, close_msg):
-        """Handle WebSocket close events."""
+        """Handle WebSocket close events with reconnect logic."""
         logger.warning(f"WebSocket closed: {close_status_code} - {close_msg}")
-        self.running = False
         
         # Don't reconnect if we had subscription errors (reconnecting won't help)
         if self.subscription_error_count >= 3:
             logger.error("Too many subscription errors. Not reconnecting.")
+            self.running = False
             return
         
-        # Attempt to reconnect
-        if self.reconnect_attempts < self.config['ingestion']['max_reconnect_attempts']:
+        # Don't reconnect if shutdown was requested
+        if not self.running:
+            logger.info("Shutdown requested, not reconnecting.")
+            return
+        
+        # Attempt to reconnect with exponential backoff
+        max_attempts = self.config['ingestion']['max_reconnect_attempts']
+        if self.reconnect_attempts < max_attempts:
             delay = self.config['ingestion']['reconnect_delay']
-            # Exponential backoff for reconnection
-            actual_delay = delay * (2 ** min(self.reconnect_attempts, 3))
-            logger.info(f"Reconnecting in {actual_delay} seconds... (attempt {self.reconnect_attempts + 1})")
+            # Exponential backoff: delay * 2^attempts, capped at 60 seconds
+            actual_delay = min(delay * (2 ** min(self.reconnect_attempts, 5)), 60)
+            logger.info(
+                f"Reconnecting in {actual_delay:.1f} seconds... "
+                f"(attempt {self.reconnect_attempts + 1}/{max_attempts})"
+            )
             time.sleep(actual_delay)
             self.reconnect_attempts += 1
-            self.connect()
+            
+            # Only reconnect if still running
+            if self.running:
+                try:
+                    self.connect()
+                except Exception as e:
+                    logger.error(f"Reconnection attempt failed: {e}")
+                    if self.reconnect_attempts >= max_attempts:
+                        logger.error("Max reconnect attempts reached. Exiting.")
+                        self.running = False
         else:
             logger.error("Max reconnect attempts reached. Exiting.")
+            self.running = False
     
     def _on_open(self, ws):
         """Handle WebSocket open events."""
@@ -328,13 +360,31 @@ class CoinbaseWSIngestor:
     def shutdown(self):
         """Gracefully shutdown the ingestor."""
         logger.info("Shutting down ingestor...")
+        self.running = False
         
+        # Close WebSocket connection
         if self.ws:
-            self.ws.close()
+            try:
+                self.ws.close()
+                # Give it a moment to close gracefully
+                time.sleep(0.5)
+            except Exception as e:
+                logger.warning(f"Error closing WebSocket: {e}")
         
+        # Flush Kafka producer with retries
         if self.producer:
-            # Flush any remaining messages (blocking, with timeout)
-            self.producer.flush(timeout=10)
+            try:
+                logger.info("Flushing remaining Kafka messages...")
+                # Poll to handle any pending delivery callbacks
+                remaining = self.producer.poll(1)
+                # Flush with timeout
+                unflushed = self.producer.flush(timeout=10)
+                if unflushed > 0:
+                    logger.warning(f"{unflushed} messages could not be flushed")
+                else:
+                    logger.info("All messages flushed successfully")
+            except Exception as e:
+                logger.error(f"Error flushing producer: {e}")
         
         logger.info(f"Total messages processed: {self.message_count}")
         logger.info("Shutdown complete")

@@ -2,7 +2,20 @@
 
 A real-time data pipeline for detecting short-term volatility spikes in cryptocurrency markets using Coinbase Advanced Trade WebSocket API, Kafka, MLflow, and FastAPI.
 
-## 🚀 Quick Start
+## 🚀 Quick Setup 
+
+```bash
+cp .env.example .env                    # Copy template (edit .env with your values)
+docker-compose -f docker/compose.yaml up -d  # Start services
+pip install -r requirements.txt         # Install dependencies
+python models/train.py                  # Train model (if needed)
+curl http://localhost:8000/health     # Verify API
+python scripts/load_test.py             # Run load test
+```
+
+**Note**: `.env.example` contains placeholder values (safe to commit). Copy to `.env` and fill in your actual values. The `.env` file is gitignored and will never be committed. If `.env` doesn't exist, the code falls back to `config.yaml`.
+
+## 🚀 Detailed Quick Start
 
 ### Prerequisites
 
@@ -232,12 +245,26 @@ This will:
 
 ## Configuration
 
+### Environment Variables (`.env`)
+
+The project uses environment variables for sensitive or deployment-specific settings. 
+
+1. **Copy the template**: `cp .env.example .env`
+2. **Edit `.env`** with your actual values (this file is gitignored)
+3. **Never commit `.env`** to GitHub - it may contain secrets
+
+**Priority**: Environment variables override `config.yaml` values. If an env var is not set, the code falls back to `config.yaml`.
+
+### Config File (`config.yaml`)
+
 Edit `config.yaml` to customize:
 
 - **Kafka settings:** Bootstrap servers, topic names
 - **Coinbase products:** Trading pairs to monitor (default: BTC-USD, ETH-USD)
 - **Ingestion settings:** Data directory, file format, reconnect behavior
 - **MLflow settings:** Tracking URI, experiment name
+
+**Note**: `.env.example` contains safe placeholder values and can be committed to GitHub. Your actual `.env` file should never be committed.
 
 ## Testing Milestone 1 Requirements
 
@@ -409,6 +436,30 @@ This generates drift and data quality reports comparing training vs test sets.
 - **Evaluation Report:** `reports/model_eval.json`
 - **Evidently Report:** `reports/evidently/evidently_report.html`
 - **Model Card:** `docs/model_card_v1.md`
+
+## 🧪 Testing & CI
+
+### Load Testing
+
+Run a load test with 100 burst requests:
+
+```bash
+python scripts/load_test.py --url http://localhost:8000 --requests 100
+```
+
+This will:
+- Send 100 concurrent requests to the `/predict` endpoint
+- Measure latency statistics (mean, median, P95, P99)
+- Generate a detailed report in `load_test_report.json`
+
+### CI Pipeline
+
+The project includes GitHub Actions CI that runs:
+- **Black** - Code formatting check
+- **Ruff** - Linting
+- **Integration tests** - API endpoint tests
+
+View CI status in the GitHub Actions tab.
 
 ## Next Steps
 

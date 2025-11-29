@@ -178,7 +178,7 @@ class PredictionConsumer:
         logger.info(f"✅ Model loaded successfully (version: {model_version}, source: {loaded_from})")
     
     def _create_kafka_consumer(self) -> Consumer:
-        """Create Kafka consumer for feature messages."""
+        """Create Kafka consumer for feature messages with reconnect logic."""
         # Allow override from environment variable (useful for Docker)
         bootstrap_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', self.config['kafka']['bootstrap_servers'])
         topic = self.config['kafka']['topic_features']
@@ -191,7 +191,12 @@ class PredictionConsumer:
             'enable.auto.commit': True,
             'auto.commit.interval.ms': 5000,
             'session.timeout.ms': 30000,
-            'max.poll.interval.ms': 300000
+            'max.poll.interval.ms': 300000,
+            'socket.keepalive.enable': True,  # Keep connections alive
+            'reconnect.backoff.ms': 100,  # Initial reconnect backoff
+            'reconnect.backoff.max.ms': 10000,  # Max reconnect backoff
+            'metadata.request.timeout.ms': 30000,  # Metadata request timeout
+            'request.timeout.ms': 30000,  # Request timeout
         }
         
         consumer = Consumer(consumer_config)
@@ -201,15 +206,22 @@ class PredictionConsumer:
         return consumer
     
     def _create_kafka_producer(self) -> Producer:
-        """Create Kafka producer for prediction results."""
+        """Create Kafka producer for prediction results with retry logic."""
         # Allow override from environment variable (useful for Docker)
         bootstrap_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', self.config['kafka']['bootstrap_servers'])
         
         producer_config = {
             'bootstrap.servers': bootstrap_servers,
             'acks': 'all',
-            'retries': 3,
-            'compression.type': 'snappy'
+            'retries': 10,  # Increased retries for resilience
+            'retry.backoff.ms': 1000,  # 1 second backoff between retries
+            'compression.type': 'snappy',
+            'socket.keepalive.enable': True,  # Keep connections alive
+            'reconnect.backoff.ms': 100,  # Initial reconnect backoff
+            'reconnect.backoff.max.ms': 10000,  # Max reconnect backoff
+            'message.send.max.retries': 10,  # Max retries per message
+            'request.timeout.ms': 30000,  # Request timeout
+            'delivery.timeout.ms': 120000,  # Total delivery timeout
         }
         
         producer = Producer(producer_config)
@@ -339,42 +351,76 @@ class PredictionConsumer:
         
         logger.info("✅ Prediction consumer started. Waiting for messages...")
         
+        reconnect_attempts = 0
+        max_reconnect_attempts = 10
+        reconnect_delay = 5
+        
         try:
             while self.running:
-                # Poll for messages (timeout = 1 second)
-                msg = self.consumer.poll(timeout=1.0)
-                
-                if msg is None:
-                    continue
-                
-                if msg.error():
-                    if msg.error().code() == KafkaError._PARTITION_EOF:
-                        # End of partition - continue polling
-                        continue
-                    else:
-                        logger.error(f"Consumer error: {msg.error()}")
-                        self.errors += 1
-                        continue
-                
-                # Process message
-                self.messages_processed += 1
-                prediction = self._process_feature_message(msg.value())
-                
-                if prediction:
-                    self.predictions_made += 1
-                    self._publish_prediction(prediction)
+                try:
+                    # Poll for messages (timeout = 1 second)
+                    msg = self.consumer.poll(timeout=1.0)
                     
-                    # Log periodically
-                    if self.predictions_made % 100 == 0:
-                        elapsed = time.time() - self.start_time
-                        rate = self.predictions_made / elapsed if elapsed > 0 else 0
-                        logger.info(
-                            f"Processed {self.messages_processed} messages, "
-                            f"made {self.predictions_made} predictions "
-                            f"({rate:.1f} predictions/sec)"
-                        )
-                else:
+                    if msg is None:
+                        continue
+                    
+                    if msg.error():
+                        if msg.error().code() == KafkaError._PARTITION_EOF:
+                            # End of partition - continue polling
+                            continue
+                        elif msg.error().code() == KafkaError._TRANSPORT:
+                            # Transport error - try to reconnect
+                            logger.error(f"Kafka transport error: {msg.error()}")
+                            reconnect_attempts += 1
+                            if reconnect_attempts <= max_reconnect_attempts:
+                                delay = min(reconnect_delay * (2 ** min(reconnect_attempts - 1, 5)), 60)
+                                logger.info(f"Reconnecting to Kafka in {delay:.1f} seconds... (attempt {reconnect_attempts})")
+                                time.sleep(delay)
+                                # Recreate consumer
+                                try:
+                                    self.consumer.close()
+                                except:
+                                    pass
+                                self.consumer = self._create_kafka_consumer()
+                                reconnect_attempts = 0  # Reset on successful reconnect
+                                continue
+                            else:
+                                logger.error("Max reconnect attempts reached. Exiting.")
+                                self.running = False
+                                break
+                        else:
+                            logger.error(f"Consumer error: {msg.error()}")
+                            self.errors += 1
+                            continue
+                    
+                    # Reset reconnect attempts on successful message
+                    reconnect_attempts = 0
+                    
+                    # Process message
+                    self.messages_processed += 1
+                    prediction = self._process_feature_message(msg.value())
+                    
+                    if prediction:
+                        self.predictions_made += 1
+                        self._publish_prediction(prediction)
+                        
+                        # Log periodically
+                        if self.predictions_made % 100 == 0:
+                            elapsed = time.time() - self.start_time
+                            rate = self.predictions_made / elapsed if elapsed > 0 else 0
+                            logger.info(
+                                f"Processed {self.messages_processed} messages, "
+                                f"made {self.predictions_made} predictions "
+                                f"({rate:.1f} predictions/sec)"
+                            )
+                    else:
+                        self.errors += 1
+                
+                except Exception as e:
+                    logger.error(f"Error in consumer loop: {e}", exc_info=True)
                     self.errors += 1
+                    # Continue running unless it's a fatal error
+                    time.sleep(1)  # Brief pause before retrying
                 
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
@@ -386,14 +432,32 @@ class PredictionConsumer:
     def _shutdown(self):
         """Shutdown the consumer gracefully."""
         logger.info("Shutting down prediction consumer...")
+        self.running = False
         
+        # Close consumer gracefully
         if self.consumer:
-            self.consumer.close()
-            logger.info("Kafka consumer closed")
+            try:
+                # Commit any pending offsets before closing
+                self.consumer.commit()
+                self.consumer.close()
+                logger.info("Kafka consumer closed")
+            except Exception as e:
+                logger.warning(f"Error closing consumer: {e}")
         
+        # Flush producer with retries
         if self.producer:
-            self.producer.flush(timeout=10)
-            logger.info("Kafka producer flushed")
+            try:
+                logger.info("Flushing remaining Kafka messages...")
+                # Poll to handle any pending delivery callbacks
+                remaining = self.producer.poll(1)
+                # Flush with timeout
+                unflushed = self.producer.flush(timeout=10)
+                if unflushed > 0:
+                    logger.warning(f"{unflushed} messages could not be flushed")
+                else:
+                    logger.info("All messages flushed successfully")
+            except Exception as e:
+                logger.error(f"Error flushing producer: {e}")
         
         # Print statistics
         if self.start_time:
