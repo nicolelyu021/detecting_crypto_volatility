@@ -24,11 +24,13 @@ jobs:
       
       - name: Run Black
         run: |
+          cd crypto-volatility
           black --check --diff .
         continue-on-error: false
       
       - name: Run Ruff
         run: |
+          cd crypto-volatility
           ruff check .
         continue-on-error: false
 
@@ -44,10 +46,11 @@ jobs:
       
       - name: Install dependencies
         run: |
+          cd crypto-volatility
           pip install -r requirements.txt
           pip install pytest pytest-asyncio httpx
       
       - name: Run integration test
         run: |
+          cd crypto-volatility
           python -m pytest tests/ -v
-
