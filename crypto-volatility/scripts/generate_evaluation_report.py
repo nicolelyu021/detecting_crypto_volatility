@@ -9,7 +9,6 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Optional
 
 import mlflow
 import pandas as pd
@@ -21,7 +20,6 @@ from sklearn.metrics import (
     confusion_matrix,
     f1_score,
     precision_score,
-    precision_recall_curve,
     recall_score,
     roc_auc_score,
 )
@@ -38,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 def load_test_set(config_path: str = "config.yaml") -> pd.DataFrame:
     """Load test set."""
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config = yaml.safe_load(f)
 
     test_path = Path(config["features"]["data_dir"]) / "test_set.parquet"
@@ -53,7 +51,7 @@ def load_test_set(config_path: str = "config.yaml") -> pd.DataFrame:
     return df
 
 
-def load_mlflow_runs(config: Dict) -> Dict:
+def load_mlflow_runs(config: dict) -> dict:
     """Load MLflow runs for baseline and ML models."""
     mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
     mlflow.set_experiment(config["mlflow"]["experiment_name"])
@@ -97,7 +95,7 @@ def load_mlflow_runs(config: Dict) -> Dict:
     return results
 
 
-def generate_report(test_df: pd.DataFrame, mlflow_results: Dict, output_dir: Path):
+def generate_report(test_df: pd.DataFrame, mlflow_results: dict, output_dir: Path):
     """Generate evaluation report."""
     logger.info("Generating evaluation report...")
 
@@ -188,7 +186,7 @@ def main():
 
     try:
         # Load config
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             config = yaml.safe_load(f)
 
         # Load test set
@@ -202,7 +200,7 @@ def main():
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate report
-        report = generate_report(test_df, mlflow_results, output_dir)
+        generate_report(test_df, mlflow_results, output_dir)
 
         logger.info("Evaluation report generation complete!")
 

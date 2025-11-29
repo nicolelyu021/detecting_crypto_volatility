@@ -26,9 +26,15 @@ exclude = [
     "build",
     "dist",
     ".eggs",
+    "notebooks",  # Jupyter notebooks have different import structure
 ]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP"]
-ignore = ["E501"]  # Line too long (handled by Black)
+ignore = [
+    "E501",  # Line too long (handled by Black)
+    "N803",  # Argument name should be lowercase (X is standard ML convention)
+    "N806",  # Variable name should be lowercase (X, X_dict are standard ML conventions)
+    "E722",  # Allow bare except for cleanup code
+]
 

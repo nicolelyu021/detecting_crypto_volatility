@@ -10,9 +10,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List
 
-import pandas as pd
 import yaml
 from confluent_kafka import Producer
 from dotenv import load_dotenv
@@ -35,13 +33,13 @@ class KafkaReplay:
         self.config = self._load_config(config_path)
         self.producer = self._create_producer()
 
-    def _load_config(self, config_path: str) -> Dict:
+    def _load_config(self, config_path: str) -> dict:
         """Load configuration from YAML file."""
         config_file = Path(config_path)
         if not config_file.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
 
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             return yaml.safe_load(f)
 
     def _create_producer(self) -> Producer:
@@ -59,12 +57,12 @@ class KafkaReplay:
         logger.info(f"Created Kafka producer for {bootstrap_servers}")
         return producer
 
-    def _load_raw_data(self, file_path: Path) -> List[Dict]:
+    def _load_raw_data(self, file_path: Path) -> list[dict]:
         """Load raw data from NDJSON file."""
         logger.info(f"Loading raw data from {file_path}")
 
         ticks = []
-        with open(file_path, "r") as f:
+        with open(file_path) as f:
             for line in f:
                 line = line.strip()
                 if line:
@@ -77,7 +75,7 @@ class KafkaReplay:
         logger.info(f"Loaded {len(ticks)} ticks from {file_path}")
         return ticks
 
-    def _extract_10_minutes(self, ticks: List[Dict], start_time: float = None) -> List[Dict]:
+    def _extract_10_minutes(self, ticks: list[dict], start_time: float = None) -> list[dict]:
         """Extract 10 minutes (600 seconds) of data."""
         if not ticks:
             return []
@@ -105,7 +103,7 @@ class KafkaReplay:
 
         return filtered_ticks
 
-    def _publish_tick(self, tick: Dict, topic: str):
+    def _publish_tick(self, tick: dict, topic: str):
         """Publish a single tick to Kafka."""
         value = json.dumps(tick).encode("utf-8")
         product_id = tick.get("product_id", "").encode("utf-8") if tick.get("product_id") else None
@@ -183,7 +181,6 @@ class KafkaReplay:
 
         # Replay ticks with timing
         replay_start = time.time()
-        first_tick_time = filtered_ticks[0].get("ingestion_timestamp", 0)
 
         for i, tick in enumerate(filtered_ticks):
             tick_time = tick.get("ingestion_timestamp", 0)

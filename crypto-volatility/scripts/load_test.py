@@ -4,16 +4,16 @@ Load test script for the volatility prediction API.
 Sends 100 burst requests and measures latency.
 """
 
+import argparse
 import asyncio
 import json
 import statistics
 import time
-from typing import List, Dict
+
 import httpx
-import argparse
 
 
-async def make_request(client: httpx.AsyncClient, url: str, payload: Dict) -> Dict:
+async def make_request(client: httpx.AsyncClient, url: str, payload: dict) -> dict:
     """Make a single request and return timing information."""
     start_time = time.time()
     try:
@@ -51,7 +51,7 @@ async def run_load_test(base_url: str, num_requests: int = 100):
     }
 
     url = f"{base_url}/predict"
-    results: List[Dict] = []
+    results: list[dict] = []
 
     # Create async client with connection pooling
     async with httpx.AsyncClient() as client:

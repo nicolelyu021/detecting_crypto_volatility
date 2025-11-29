@@ -2,10 +2,11 @@
 Baseline model for volatility spike detection using z-score threshold.
 """
 
-import numpy as np
-import pandas as pd
 import pickle
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
 
 
 class ZScoreBaseline:

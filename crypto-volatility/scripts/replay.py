@@ -9,10 +9,8 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List
 
 import pandas as pd
-import yaml
 from dotenv import load_dotenv
 
 # Add parent directory to path to import featurizer
@@ -39,12 +37,12 @@ class ReplayEngineer(FeatureEngineer):
         self.data_file = data_file
         self.producer = None  # Don't publish to Kafka during replay
 
-    def _load_raw_data(self, file_path: Path) -> List[Dict]:
+    def _load_raw_data(self, file_path: Path) -> list[dict]:
         """Load raw data from NDJSON file."""
         logger.info(f"Loading raw data from {file_path}")
 
         ticks = []
-        with open(file_path, "r") as f:
+        with open(file_path) as f:
             for line in f:
                 line = line.strip()
                 if line:
@@ -57,7 +55,7 @@ class ReplayEngineer(FeatureEngineer):
         logger.info(f"Loaded {len(ticks)} ticks from {file_path}")
         return ticks
 
-    def _publish_to_kafka(self, features: Dict):
+    def _publish_to_kafka(self, features: dict):
         """Override to skip Kafka publishing during replay."""
         pass  # Don't publish during replay
 

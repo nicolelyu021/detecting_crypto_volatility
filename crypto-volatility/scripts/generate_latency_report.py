@@ -20,7 +20,7 @@ def generate_report(
         print(f"Error: {json_file} not found. Run load_test.py first.")
         sys.exit(1)
 
-    with open(report_path, "r") as f:
+    with open(report_path) as f:
         report = json.load(f)
 
     # Extract data
@@ -87,7 +87,7 @@ The API successfully handled {num_requests} concurrent requests with:
         f.write(markdown)
 
     print(f"✅ Latency report generated: {output_file}")
-    print(f"\nPreview:")
+    print("\nPreview:")
     print("=" * 60)
     print(markdown)
     print("=" * 60)

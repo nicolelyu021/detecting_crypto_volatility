@@ -11,12 +11,11 @@ import signal
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
 import yaml
-from confluent_kafka import Consumer, Producer, KafkaError
+from confluent_kafka import Consumer, KafkaError, Producer
 from dotenv import load_dotenv
 
 # Add parent directory to path for imports
@@ -40,9 +39,9 @@ class PredictionConsumer:
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize the prediction consumer."""
         self.config = self._load_config(config_path)
-        self.consumer: Optional[Consumer] = None
-        self.producer: Optional[Producer] = None
-        self.predictor: Optional[VolatilityPredictor] = None
+        self.consumer: Consumer | None = None
+        self.producer: Producer | None = None
+        self.predictor: VolatilityPredictor | None = None
         self.running = False
 
         # Statistics
@@ -51,13 +50,13 @@ class PredictionConsumer:
         self.errors = 0
         self.start_time = None
 
-    def _load_config(self, config_path: str) -> Dict:
+    def _load_config(self, config_path: str) -> dict:
         """Load configuration from YAML file."""
         config_file = Path(config_path)
         if not config_file.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
 
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             return yaml.safe_load(f)
 
     def _load_model(self):
@@ -240,7 +239,7 @@ class PredictionConsumer:
         logger.info(f"Created Kafka producer for {bootstrap_servers}")
         return producer
 
-    def _process_feature_message(self, message_value: bytes) -> Optional[Dict]:
+    def _process_feature_message(self, message_value: bytes) -> dict | None:
         """Process a feature message and make a prediction."""
         try:
             # Parse JSON message
@@ -322,7 +321,7 @@ class PredictionConsumer:
             logger.error(f"Error processing feature message: {e}", exc_info=True)
             return None
 
-    def _publish_prediction(self, prediction: Dict):
+    def _publish_prediction(self, prediction: dict):
         """Publish prediction result to Kafka."""
         topic = self.config["kafka"].get("topic_predictions", "ticks.predictions")
         product_id = (
@@ -470,7 +469,7 @@ class PredictionConsumer:
             try:
                 logger.info("Flushing remaining Kafka messages...")
                 # Poll to handle any pending delivery callbacks
-                remaining = self.producer.poll(1)
+                self.producer.poll(1)
                 # Flush with timeout
                 unflushed = self.producer.flush(timeout=10)
                 if unflushed > 0:

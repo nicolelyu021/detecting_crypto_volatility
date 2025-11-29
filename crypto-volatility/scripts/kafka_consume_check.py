@@ -9,12 +9,11 @@ import logging
 import os
 import signal
 import sys
-from typing import Dict, Optional
 
 import yaml
-from dotenv import load_dotenv
 from confluent_kafka import Consumer
 from confluent_kafka.error import KafkaError
+from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
@@ -32,18 +31,18 @@ class KafkaStreamValidator:
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize the validator with configuration."""
         self.config = self._load_config(config_path)
-        self.consumer: Optional[Consumer] = None
+        self.consumer: Consumer | None = None
         self.running = False
         self.message_count = 0
-        self.product_counts: Dict[str, int] = {}
+        self.product_counts: dict[str, int] = {}
 
-    def _load_config(self, config_path: str) -> Dict:
+    def _load_config(self, config_path: str) -> dict:
         """Load configuration from YAML file."""
         config_file = os.path.abspath(config_path)
         if not os.path.exists(config_file):
             raise FileNotFoundError(f"Config file not found: {config_path}")
 
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             return yaml.safe_load(f)
 
     def _create_kafka_consumer(self) -> Consumer:
@@ -69,7 +68,7 @@ class KafkaStreamValidator:
 
         return consumer
 
-    def validate_message(self, message: Dict) -> bool:
+    def validate_message(self, message: dict) -> bool:
         """Validate message structure and content."""
         # Check for either 'timestamp' or 'ingestion_timestamp'
         required_fields = ["product_id", "price"]
@@ -135,7 +134,7 @@ class KafkaStreamValidator:
                 try:
                     # Deserialize message manually
                     value = json.loads(msg.value().decode("utf-8"))
-                    key = msg.key().decode("utf-8") if msg.key() else None
+                    msg.key().decode("utf-8") if msg.key() else None
 
                     # Validate message
                     if self.validate_message(value):
@@ -180,7 +179,7 @@ class KafkaStreamValidator:
         logger.info("VALIDATION SUMMARY")
         logger.info("=" * 60)
         logger.info(f"Total messages consumed: {self.message_count}")
-        logger.info(f"Messages per product:")
+        logger.info("Messages per product:")
         for product_id, count in sorted(self.product_counts.items()):
             logger.info(f"  {product_id}: {count} messages")
         logger.info("=" * 60)

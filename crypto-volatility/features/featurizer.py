@@ -12,7 +12,6 @@ import sys
 import time
 from collections import deque
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -37,28 +36,28 @@ class FeatureEngineer:
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize the feature engineer."""
         self.config = self._load_config(config_path)
-        self.consumer: Optional[Consumer] = None
-        self.producer: Optional[Producer] = None
+        self.consumer: Consumer | None = None
+        self.producer: Producer | None = None
         self.running = False
 
         # Data buffers per product
-        self.buffers: Dict[str, deque] = {}
+        self.buffers: dict[str, deque] = {}
 
         # Feature storage
-        self.feature_buffer: List[Dict] = []
+        self.feature_buffer: list[dict] = []
         self.feature_count = 0
 
         # Create output directories
         self.features_dir = Path(self.config["features"]["data_dir"])
         self.features_dir.mkdir(parents=True, exist_ok=True)
 
-    def _load_config(self, config_path: str) -> Dict:
+    def _load_config(self, config_path: str) -> dict:
         """Load configuration from YAML file."""
         config_file = Path(config_path)
         if not config_file.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
 
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             return yaml.safe_load(f)
 
     def _create_kafka_consumer(self) -> Consumer:
@@ -96,7 +95,7 @@ class FeatureEngineer:
 
         return Producer(producer_config)
 
-    def _compute_midprice(self, best_bid: str, best_ask: str) -> Optional[float]:
+    def _compute_midprice(self, best_bid: str, best_ask: str) -> float | None:
         """Compute midprice from bid and ask."""
         try:
             bid = float(best_bid) if best_bid else None
@@ -108,7 +107,7 @@ class FeatureEngineer:
         except (ValueError, TypeError):
             return None
 
-    def _compute_returns(self, prices: List[float], intervals: List[int]) -> Dict[str, float]:
+    def _compute_returns(self, prices: list[float], intervals: list[int]) -> dict[str, float]:
         """Compute returns over different intervals."""
         if len(prices) < 2:
             return {}
@@ -130,7 +129,7 @@ class FeatureEngineer:
 
         return returns
 
-    def _compute_bid_ask_spread(self, best_bid: str, best_ask: str) -> Optional[float]:
+    def _compute_bid_ask_spread(self, best_bid: str, best_ask: str) -> float | None:
         """Compute bid-ask spread (absolute and relative)."""
         try:
             bid = float(best_bid) if best_bid else None
@@ -144,7 +143,7 @@ class FeatureEngineer:
         except (ValueError, TypeError):
             return None
 
-    def _compute_trade_intensity(self, timestamps: List[float], window_seconds: int = 60) -> float:
+    def _compute_trade_intensity(self, timestamps: list[float], window_seconds: int = 60) -> float:
         """Compute number of trades per second in the window."""
         if len(timestamps) < 2:
             return 0.0
@@ -156,7 +155,7 @@ class FeatureEngineer:
         trades_in_window = sum(1 for ts in timestamps if ts >= window_start)
         return trades_in_window / window_seconds
 
-    def _compute_volatility(self, returns: List[float], window_size: int = 60) -> float:
+    def _compute_volatility(self, returns: list[float], window_size: int = 60) -> float:
         """Compute rolling standard deviation of returns."""
         if len(returns) < 2:
             return 0.0
@@ -168,7 +167,7 @@ class FeatureEngineer:
             return np.std(recent_returns)
         return 0.0
 
-    def _compute_order_book_imbalance(self, best_bid: str, best_ask: str) -> Optional[float]:
+    def _compute_order_book_imbalance(self, best_bid: str, best_ask: str) -> float | None:
         """Compute order book imbalance: (ask - bid) / (ask + bid)."""
         try:
             bid = float(best_bid) if best_bid else None
@@ -180,7 +179,7 @@ class FeatureEngineer:
         except (ValueError, TypeError):
             return None
 
-    def _process_tick(self, tick_data: Dict) -> Optional[Dict]:
+    def _process_tick(self, tick_data: dict) -> dict | None:
         """Process a single tick and compute features if window is ready."""
         product_id = tick_data.get("product_id", "")
         if not product_id:
@@ -318,7 +317,7 @@ class FeatureEngineer:
 
             self.feature_buffer.clear()
 
-    def _publish_to_kafka(self, features: Dict):
+    def _publish_to_kafka(self, features: dict):
         """Publish features to Kafka."""
         topic = self.config["kafka"]["topic_features"]
         product_id = features.get("product_id", "")

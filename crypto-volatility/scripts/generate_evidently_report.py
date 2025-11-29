@@ -8,12 +8,11 @@ import json
 import logging
 import os
 import sys
-from pathlib import Path
-from typing import Optional
 from datetime import datetime
+from pathlib import Path
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import yaml
 from dotenv import load_dotenv
 
@@ -33,8 +32,8 @@ try:
 except ImportError:
     try:
         # Try alternative import path
-        from evidently.report import Report
         from evidently.presets import DataDriftPreset, DataSummaryPreset
+        from evidently.report import Report
     except ImportError as e:
         logger.error(f"Could not import Evidently: {e}")
         logger.error("Please check your Evidently installation: pip install evidently")
@@ -53,7 +52,7 @@ def save_report_html(report: Report, output_path: Path) -> None:
         try:
             report.save_html(str(output_path))
             saved = True
-            logger.debug(f"Saved using save_html() method")
+            logger.debug("Saved using save_html() method")
         except Exception as e:
             logger.debug(f"save_html() failed: {e}")
 
@@ -64,7 +63,7 @@ def save_report_html(report: Report, output_path: Path) -> None:
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(html_content)
             saved = True
-            logger.debug(f"Saved using get_html() method")
+            logger.debug("Saved using get_html() method")
         except Exception as e:
             logger.debug(f"get_html() failed: {e}")
 
@@ -73,7 +72,7 @@ def save_report_html(report: Report, output_path: Path) -> None:
         try:
             report.save(str(output_path))
             saved = True
-            logger.debug(f"Saved using save() method")
+            logger.debug("Saved using save() method")
         except Exception as e:
             logger.debug(f"save() failed: {e}")
 
@@ -84,7 +83,7 @@ def save_report_html(report: Report, output_path: Path) -> None:
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(html_content)
             saved = True
-            logger.debug(f"Saved using as_html() method")
+            logger.debug("Saved using as_html() method")
         except Exception as e:
             logger.debug(f"as_html() failed: {e}")
 
@@ -114,7 +113,7 @@ def save_report_html(report: Report, output_path: Path) -> None:
         logger.warning(
             f"Could not find standard save method for Report. Available methods: {[m for m in dir(report) if not m.startswith('_')][:10]}"
         )
-        logger.warning(f"Creating basic HTML report. Check JSON output for detailed metrics.")
+        logger.warning("Creating basic HTML report. Check JSON output for detailed metrics.")
 
         # Try to get some info from the report
         report_info = {
@@ -162,7 +161,7 @@ def save_report_html(report: Report, output_path: Path) -> None:
 
 def load_features(config_path: str = "config.yaml") -> pd.DataFrame:
     """Load features from Parquet file."""
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config = yaml.safe_load(f)
 
     features_path = Path(config["features"]["data_dir"]) / "features.parquet"
@@ -199,7 +198,7 @@ def split_early_late(df: pd.DataFrame, split_ratio: float = 0.5) -> tuple:
 
 def load_train_test_sets(config_path: str = "config.yaml") -> tuple:
     """Load training and test sets for comparison."""
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config = yaml.safe_load(f)
 
     features_dir = Path(config["features"]["data_dir"])

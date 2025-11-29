@@ -3,11 +3,12 @@ Integration test for the FastAPI application.
 Tests API endpoints without requiring a full model setup.
 """
 
-import pytest
-from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+from fastapi.testclient import TestClient
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))

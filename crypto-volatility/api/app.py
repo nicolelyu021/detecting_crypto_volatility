@@ -4,24 +4,22 @@ FastAPI Application for Crypto Volatility Detection
 Provides /health, /predict, /version, and /metrics endpoints.
 """
 
-import json
 import logging
 import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
 
-import numpy as np
-import pandas as pd
-import yaml
 import mlflow
 import mlflow.sklearn
 import mlflow.xgboost
+import numpy as np
+import pandas as pd
+import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from pydantic import BaseModel, Field
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from starlette.responses import Response
 
 # Import predictor from models
@@ -62,25 +60,25 @@ PREDICTION_PROBABILITY = Histogram(
 MODEL_LOAD_TIME = Gauge("model_load_time_seconds", "Time taken to load the model")
 
 # Global predictor instance
-predictor: Optional[VolatilityPredictor] = None
+predictor: VolatilityPredictor | None = None
 model_version: str = "unknown"
-model_loaded_at: Optional[float] = None
+model_loaded_at: float | None = None
 
 
 class FeatureRequest(BaseModel):
     """Request model for prediction endpoint."""
 
     price: float = Field(..., description="Current price")
-    midprice: Optional[float] = Field(None, description="Midprice (bid+ask)/2")
-    return_1s: Optional[float] = Field(0.0, description="1-second return")
-    return_5s: Optional[float] = Field(0.0, description="5-second return")
-    return_30s: Optional[float] = Field(0.0, description="30-second return")
-    return_60s: Optional[float] = Field(0.0, description="60-second return")
-    volatility: Optional[float] = Field(0.0, description="Rolling volatility")
-    trade_intensity: Optional[float] = Field(0.0, description="Trade intensity")
-    spread_abs: Optional[float] = Field(None, description="Absolute bid-ask spread")
-    spread_rel: Optional[float] = Field(None, description="Relative bid-ask spread")
-    order_book_imbalance: Optional[float] = Field(None, description="Order book imbalance")
+    midprice: float | None = Field(None, description="Midprice (bid+ask)/2")
+    return_1s: float | None = Field(0.0, description="1-second return")
+    return_5s: float | None = Field(0.0, description="5-second return")
+    return_30s: float | None = Field(0.0, description="30-second return")
+    return_60s: float | None = Field(0.0, description="60-second return")
+    volatility: float | None = Field(0.0, description="Rolling volatility")
+    trade_intensity: float | None = Field(0.0, description="Trade intensity")
+    spread_abs: float | None = Field(None, description="Absolute bid-ask spread")
+    spread_rel: float | None = Field(None, description="Relative bid-ask spread")
+    order_book_imbalance: float | None = Field(None, description="Order book imbalance")
 
 
 class PredictionResponse(BaseModel):
@@ -111,7 +109,7 @@ def load_model(config_path: str = "config.yaml"):
     start_time = time.time()
 
     # Load config
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config = yaml.safe_load(f)
 
     # Setup MLflow tracking URI
@@ -125,7 +123,6 @@ def load_model(config_path: str = "config.yaml"):
 
     loaded_from = None
     mlflow_model = None
-    scaler = None
 
     try:
         # Priority 1: Load from MLflow Model Registry (if MODEL_VARIANT is set)
@@ -144,7 +141,7 @@ def load_model(config_path: str = "config.yaml"):
         if mlflow_model is None and model_run_id:
             logger.info(f"Loading model from MLflow run ID: {model_run_id}")
             try:
-                run = mlflow.get_run(model_run_id)
+                mlflow.get_run(model_run_id)
                 model_uri = f"runs:/{model_run_id}/model"
                 mlflow_model = mlflow.sklearn.load_model(model_uri)
                 model_version = f"run-{model_run_id}"
@@ -173,7 +170,7 @@ def load_model(config_path: str = "config.yaml"):
 
                 if len(runs) > 0:
                     run_id = runs.iloc[0]["run_id"]
-                    run = mlflow.get_run(run_id)
+                    mlflow.get_run(run_id)
                     model_uri = f"runs:/{run_id}/model"
 
                     # Try to load as sklearn model (works for XGBoost wrapped in sklearn)

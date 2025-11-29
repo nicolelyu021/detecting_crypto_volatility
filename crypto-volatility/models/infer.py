@@ -4,14 +4,12 @@ Inference Script
 Real-time inference for volatility spike detection.
 """
 
-import json
 import logging
 import os
 import pickle
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -31,7 +29,7 @@ logger = logging.getLogger(__name__)
 class VolatilityPredictor:
     """Predictor for volatility spikes."""
 
-    def __init__(self, model_path: str, scaler_path: Optional[str] = None, model_type: str = "ml"):
+    def __init__(self, model_path: str, scaler_path: str | None = None, model_type: str = "ml"):
         """Initialize predictor with saved model."""
         self.model_type = model_type
 
@@ -275,7 +273,7 @@ class VolatilityPredictor:
                     else:
                         # No matching features - this is a serious problem
                         logger.error(
-                            f"None of the model's expected features found in scaled features!"
+                            "None of the model's expected features found in scaled features!"
                         )
                         logger.error(f"Model expects: {model_expected_features}")
                         logger.error(f"Scaler provides: {list(X_scaled_df.columns)}")
@@ -318,7 +316,7 @@ def benchmark_inference(
     avg_time = total_time / n_iterations
     time_per_sample = avg_time / len(test_features)
 
-    logger.info(f"Benchmark results:")
+    logger.info("Benchmark results:")
     logger.info(f"  Total time: {total_time:.4f}s for {n_iterations} iterations")
     logger.info(f"  Average time per batch: {avg_time:.4f}s")
     logger.info(f"  Time per sample: {time_per_sample*1000:.4f}ms")
@@ -379,7 +377,7 @@ def main():
 
     try:
         # Load config
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             config = yaml.safe_load(f)
 
         # Load features
@@ -504,11 +502,10 @@ def main():
         # Calculate metrics if labels are available
         if "label" in df.columns:
             from sklearn.metrics import (
+                confusion_matrix,
+                f1_score,
                 precision_score,
                 recall_score,
-                f1_score,
-                confusion_matrix,
-                classification_report,
             )
 
             y_true = df["label"]
@@ -528,7 +525,7 @@ def main():
             logger.info(f"Precision: {precision:.4f}")
             logger.info(f"Recall:    {recall:.4f}")
             logger.info(f"F1 Score:  {f1:.4f}")
-            logger.info(f"\nConfusion Matrix:")
+            logger.info("\nConfusion Matrix:")
             logger.info(f"  True Negatives:  {cm[0,0]}")
             logger.info(f"  False Positives: {cm[0,1]}")
             logger.info(f"  False Negatives: {cm[1,0]}")

@@ -11,14 +11,12 @@ import signal
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import websocket
 import yaml
-from dotenv import load_dotenv
 from confluent_kafka import Producer
 from confluent_kafka.error import KafkaError
-
+from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
@@ -36,8 +34,8 @@ class CoinbaseWSIngestor:
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize the ingestor with configuration."""
         self.config = self._load_config(config_path)
-        self.producer: Optional[Producer] = None
-        self.ws: Optional[websocket.WebSocketApp] = None
+        self.producer: Producer | None = None
+        self.ws: websocket.WebSocketApp | None = None
         self.running = False
         self.reconnect_attempts = 0
         self.last_heartbeat = time.time()
@@ -49,7 +47,7 @@ class CoinbaseWSIngestor:
         self.data_dir = Path(self.config["ingestion"]["data_dir"])
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
-    def _load_config(self, config_path: str) -> Dict:
+    def _load_config(self, config_path: str) -> dict:
         """Load configuration from YAML file or environment variable."""
         # Allow override from environment variable
         config_path = os.getenv("CONFIG_PATH", config_path)
@@ -57,7 +55,7 @@ class CoinbaseWSIngestor:
         if not config_file.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
 
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             return yaml.safe_load(f)
 
     def _create_kafka_producer(self) -> Producer:
@@ -144,7 +142,7 @@ class CoinbaseWSIngestor:
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
 
-    def _handle_ticker_message(self, data: Dict, message_timestamp: str = None):
+    def _handle_ticker_message(self, data: dict, message_timestamp: str = None):
         """Process ticker messages and send to Kafka."""
         try:
             # Extract relevant ticker data
@@ -210,7 +208,7 @@ class CoinbaseWSIngestor:
         except Exception as e:
             logger.error(f"Error handling ticker message: {e}", exc_info=True)
 
-    def _write_to_file(self, data: Dict):
+    def _write_to_file(self, data: dict):
         """Write data to local file (NDJSON format)."""
         if self.config["ingestion"]["file_format"] == "ndjson":
             product_id = data.get("product_id", "unknown")
@@ -370,7 +368,7 @@ class CoinbaseWSIngestor:
             try:
                 logger.info("Flushing remaining Kafka messages...")
                 # Poll to handle any pending delivery callbacks
-                remaining = self.producer.poll(1)
+                self.producer.poll(1)
                 # Flush with timeout
                 unflushed = self.producer.flush(timeout=10)
                 if unflushed > 0:

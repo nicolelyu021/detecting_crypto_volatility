@@ -5,19 +5,17 @@ Trains baseline (z-score) and ML models for volatility spike detection.
 Logs everything to MLflow.
 """
 
-import json
 import logging
 import os
 import pickle
 import sys
 from pathlib import Path
-from typing import Dict, Tuple
 
 import mlflow
 import mlflow.sklearn
-from mlflow.exceptions import MlflowException
 import numpy as np
 import pandas as pd
+import xgboost as xgb
 import yaml
 from dotenv import load_dotenv
 from sklearn.linear_model import LogisticRegression
@@ -30,7 +28,6 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 from sklearn.preprocessing import StandardScaler
-import xgboost as xgb
 
 # Load environment variables
 load_dotenv()
@@ -76,7 +73,7 @@ class BaselineModel:
 
 def load_features(config_path: str = "config.yaml") -> pd.DataFrame:
     """Load features from Parquet file."""
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config = yaml.safe_load(f)
 
     features_path = Path(config["features"]["data_dir"]) / "features.parquet"
@@ -91,7 +88,7 @@ def load_features(config_path: str = "config.yaml") -> pd.DataFrame:
     return df
 
 
-def compute_future_volatility_and_labels(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
+def compute_future_volatility_and_labels(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """Compute future volatility and create labels."""
     logger.info("Computing future volatility and labels...")
 
@@ -135,8 +132,8 @@ def compute_future_volatility_and_labels(df: pd.DataFrame, config: Dict) -> pd.D
 
 
 def time_based_split(
-    df: pd.DataFrame, config: Dict
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    df: pd.DataFrame, config: dict
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Split data into train, validation, and test sets based on time.
     Ensures positive samples (label=1) are proportionally distributed across splits
@@ -276,7 +273,7 @@ def time_based_split(
         test_df = df.iloc[val_end:].copy()
 
     # Log final split statistics
-    logger.info(f"\nFinal split sizes:")
+    logger.info("\nFinal split sizes:")
     logger.info(f"  Train: {len(train_df)} samples ({len(train_df)/n*100:.1f}%)")
     logger.info(f"  Validation: {len(val_df)} samples ({len(val_df)/n*100:.1f}%)")
     logger.info(f"  Test: {len(test_df)} samples ({len(test_df)/n*100:.1f}%)")
@@ -286,7 +283,7 @@ def time_based_split(
         val_pos = val_df["label"].sum()
         test_pos = test_df["label"].sum()
 
-        logger.info(f"\nFinal label distribution:")
+        logger.info("\nFinal label distribution:")
         logger.info(
             f"  Train - Spikes: {train_pos}, Normal: {(train_df['label']==0).sum()}, Rate: {train_df['label'].mean()*100:.2f}%"
         )
@@ -303,7 +300,7 @@ def time_based_split(
             train_pct = (train_pos / total_pos) * 100
             val_pct = (val_pos / total_pos) * 100
             test_pct = (test_pos / total_pos) * 100
-            logger.info(f"\nProportional distribution of positives:")
+            logger.info("\nProportional distribution of positives:")
             logger.info(f"  Train: {train_pct:.1f}% (target: {train_ratio*100:.1f}%)")
             logger.info(f"  Validation: {val_pct:.1f}% (target: {val_ratio*100:.1f}%)")
             logger.info(f"  Test: {test_pct:.1f}% (target: {test_ratio*100:.1f}%)")
@@ -318,7 +315,7 @@ def time_based_split(
     return train_df, val_df, test_df
 
 
-def prepare_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+def prepare_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     """Prepare features and labels for training."""
     # Select numeric features (exclude metadata)
     feature_cols = [
@@ -351,7 +348,7 @@ def prepare_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
     return X, y
 
 
-def compute_metrics(y_true, y_pred, y_proba=None) -> Dict:
+def compute_metrics(y_true, y_pred, y_proba=None) -> dict:
     """Compute evaluation metrics."""
     metrics = {}
 
@@ -377,7 +374,7 @@ def compute_metrics(y_true, y_pred, y_proba=None) -> Dict:
     return metrics
 
 
-def train_baseline_model(X_train, y_train, X_val, y_val, config: Dict, run_name: str = "baseline"):
+def train_baseline_model(X_train, y_train, X_val, y_val, config: dict, run_name: str = "baseline"):
     """Train baseline model and log to MLflow."""
     logger.info("Training baseline model...")
 
@@ -441,7 +438,7 @@ def train_ml_model(
     y_train,
     X_val,
     y_val,
-    config: Dict,
+    config: dict,
     model_type: str = "logistic",
     run_name: str = "ml_model",
 ):
@@ -551,11 +548,9 @@ def train_ml_model(
             )
             # Use training set for threshold optimization if validation has no positives
             precision_vals, recall_vals, thresholds = precision_recall_curve(y_train, y_proba_train)
-            threshold_source = "training"
         else:
             # Find optimal threshold for precision (using validation set)
             precision_vals, recall_vals, thresholds = precision_recall_curve(y_val, y_proba_val)
-            threshold_source = "validation"
 
         # Strategy 1: Threshold that maximizes F1
         f1_scores = 2 * (precision_vals * recall_vals) / (precision_vals + recall_vals + 1e-10)
@@ -688,7 +683,7 @@ def main():
 
     try:
         # Load config
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             config = yaml.safe_load(f)
 
         # Setup MLflow
