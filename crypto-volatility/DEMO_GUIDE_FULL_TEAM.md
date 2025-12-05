@@ -476,4 +476,83 @@ This guide provides:
 
 ---
 
-**Questions? Review the script, practice once, and you'll nail it!** 🎥
+## 🎬 What Your Team Members Show
+
+### Week 4 Team Member (Minute 0-1)
+- System architecture
+- Starting services
+- API endpoints
+
+### Week 5 Team Member (Minute 4-5)
+- CI/CD pipeline
+- GitHub Actions passing
+- Load testing results
+- Resilience features (retry, reconnect)
+
+**📝 Detailed 3-Person Script Available:** See `WEEK5_DEMO_SCRIPT.md` for a complete script divided into 3 parts (CI/CD, Load Testing, Resilience) for team presentations.
+
+### YOU - Week 6 (Minutes 1-3 and 5-6)
+- Grafana dashboards
+- Prometheus metrics
+- SLOs and documentation
+- Drift detection
+- Model rollback feature
+
+### Week 7 Team Member (Minute 6-7)
+- Handoff package
+- Final documentation
+- Production readiness
+- Team collaboration
+
+---
+
+## ⏱️ Timing is Critical
+
+**Your total time: 3 minutes (1-3 and 5-6)**
+
+**Use a visible timer:**
+- Set timer for 2:00 for each section
+- Practice until you can hit exactly 2:00
+- In final recording, slightly faster is OK (1:50 is fine)
+- Don't go over! (Will cut into team time)
+
+---
+
+## 🎯 Success Criteria
+
+Your demo is successful if:
+- ✅ Shows all 4 Grafana panels clearly
+- ✅ Demonstrates real-time metric updates
+- ✅ Explains all key Week 6 features
+- ✅ Shows documentation quality
+- ✅ Demonstrates rollback capability
+- ✅ Stays within 3-minute time limit
+- ✅ Audio is clear and understandable
+- ✅ Shows professionalism and preparation
+
+---
+
+## 📞 Questions to Anticipate
+
+Your professor might wonder:
+
+**Q: Why 50% drift but model still works?**  
+**A:** "Crypto markets are inherently volatile, so drift is expected. Our model uses normalized features and was trained on diverse conditions, making it robust to this level of drift. Most importantly, performance metrics show the model continues working perfectly."
+
+**Q: Why is rollback important?**  
+**A:** "In production, if the ML model encounters unexpected data or has a bug, we need a quick safety mechanism. The baseline model provides reliable predictions while we fix the issue. It's like having a spare tire - less fancy but gets you home safely."
+
+**Q: How often should you check drift?**  
+**A:** "We recommend weekly drift reports. If drift share exceeds 75% or performance degrades, that triggers retraining."
+
+---
+
+## ✅ You're Ready!
+
+With this guide, you can:
+- ✅ Record your Week 6 portion (2 minutes split into 2 sections)
+- ✅ Coordinate with team on full 8-minute video
+- ✅ Show all Week 6 features professionally
+- ✅ Answer potential questions
+
+**Good luck with your demo! You've built something impressive!** 🚀
