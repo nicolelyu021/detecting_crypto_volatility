@@ -17,6 +17,7 @@ import pandas as pd
 import yaml
 from confluent_kafka import Consumer, KafkaError, Producer
 from dotenv import load_dotenv
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -31,6 +32,39 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# Prometheus metrics for consumer
+CONSUMER_MESSAGES_PROCESSED = Counter(
+    "volatility_consumer_messages_processed_total",
+    "Total number of messages processed by consumer"
+)
+
+CONSUMER_PREDICTIONS_MADE = Counter(
+    "volatility_consumer_predictions_made_total",
+    "Total number of predictions made by consumer"
+)
+
+CONSUMER_ERRORS = Counter(
+    "volatility_consumer_errors_total",
+    "Total number of errors in consumer",
+    ["error_type"]
+)
+
+CONSUMER_PROCESSING_TIME = Histogram(
+    "volatility_consumer_processing_seconds",
+    "Time to process each message",
+    buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0]
+)
+
+CONSUMER_LAG = Gauge(
+    "volatility_consumer_lag_seconds",
+    "Consumer lag in seconds (time difference between message timestamp and processing time)"
+)
+
+CONSUMER_PROCESSING_RATE = Gauge(
+    "volatility_consumer_processing_rate",
+    "Current processing rate (messages per second)"
+)
 
 
 class PredictionConsumer:
@@ -71,6 +105,26 @@ class PredictionConsumer:
         mlflow_model = None
         model_version = "unknown"
         loaded_from = "unknown"
+
+        # Priority 0: Load baseline model if MODEL_VARIANT=baseline (rollback safety mechanism)
+        if model_variant and model_variant.lower() == "baseline":
+            logger.info("🔄 ROLLBACK MODE: Loading baseline model...")
+            models_dir = Path(self.config["modeling"]["models_dir"])
+            baseline_path = models_dir / "baseline_model.pkl"
+            
+            if baseline_path.exists():
+                self.predictor = VolatilityPredictor(
+                    str(baseline_path),
+                    scaler_path=None,
+                    model_type="baseline",
+                )
+                model_version = f"baseline-{int(baseline_path.stat().st_mtime)}"
+                loaded_from = "baseline_rollback"
+                logger.info(f"✅ Loaded BASELINE model from: {baseline_path}")
+                logger.info("⚠️  ROLLBACK MODE ACTIVE - Using simple baseline predictor")
+                return  # Exit early, skip MLflow loading
+            else:
+                logger.warning(f"Baseline model not found at {baseline_path}, falling back to ML model")
 
         try:
             import mlflow
@@ -239,11 +293,21 @@ class PredictionConsumer:
         logger.info(f"Created Kafka producer for {bootstrap_servers}")
         return producer
 
-    def _process_feature_message(self, message_value: bytes) -> dict | None:
+    def _process_feature_message(self, message_value: bytes, message_timestamp: float = None) -> dict | None:
         """Process a feature message and make a prediction."""
+        start_time = time.time()
+        
         try:
             # Parse JSON message
             feature_data = json.loads(message_value.decode("utf-8"))
+
+            # Calculate consumer lag if message has timestamp
+            if message_timestamp:
+                lag = start_time - message_timestamp
+                CONSUMER_LAG.set(lag)
+            elif "timestamp" in feature_data:
+                lag = start_time - feature_data["timestamp"]
+                CONSUMER_LAG.set(lag)
 
             # Extract features (same logic as /predict endpoint)
             price = feature_data.get("price", 0.0)
@@ -315,10 +379,15 @@ class PredictionConsumer:
                 "model_version": getattr(self.predictor, "model_version", "unknown"),
             }
 
+            # Record processing time metric
+            processing_time = time.time() - start_time
+            CONSUMER_PROCESSING_TIME.observe(processing_time)
+
             return prediction_result
 
         except Exception as e:
             logger.error(f"Error processing feature message: {e}", exc_info=True)
+            CONSUMER_ERRORS.labels(error_type="processing_error").inc()
             return None
 
     def _publish_prediction(self, prediction: dict):
@@ -350,6 +419,14 @@ class PredictionConsumer:
     def start(self):
         """Start the prediction consumer."""
         logger.info("Starting prediction consumer...")
+
+        # Start Prometheus metrics server on port 8001
+        metrics_port = int(os.getenv("METRICS_PORT", 8001))
+        try:
+            start_http_server(metrics_port)
+            logger.info(f"✅ Prometheus metrics server started on port {metrics_port}")
+        except OSError as e:
+            logger.warning(f"Could not start metrics server on port {metrics_port}: {e}")
 
         # Load model
         self._load_model()
@@ -411,6 +488,7 @@ class PredictionConsumer:
                         else:
                             logger.error(f"Consumer error: {msg.error()}")
                             self.errors += 1
+                            CONSUMER_ERRORS.labels(error_type="kafka_error").inc()
                             continue
 
                     # Reset reconnect attempts on successful message
@@ -418,16 +496,26 @@ class PredictionConsumer:
 
                     # Process message
                     self.messages_processed += 1
-                    prediction = self._process_feature_message(msg.value())
+                    CONSUMER_MESSAGES_PROCESSED.inc()
+                    
+                    # Get message timestamp (Kafka message timestamp in milliseconds)
+                    msg_timestamp = msg.timestamp()[1] / 1000.0 if msg.timestamp()[0] == 1 else None
+                    
+                    prediction = self._process_feature_message(msg.value(), msg_timestamp)
 
                     if prediction:
                         self.predictions_made += 1
+                        CONSUMER_PREDICTIONS_MADE.inc()
                         self._publish_prediction(prediction)
+
+                        # Update processing rate gauge
+                        elapsed = time.time() - self.start_time
+                        if elapsed > 0:
+                            rate = self.messages_processed / elapsed
+                            CONSUMER_PROCESSING_RATE.set(rate)
 
                         # Log periodically
                         if self.predictions_made % 100 == 0:
-                            elapsed = time.time() - self.start_time
-                            rate = self.predictions_made / elapsed if elapsed > 0 else 0
                             logger.info(
                                 f"Processed {self.messages_processed} messages, "
                                 f"made {self.predictions_made} predictions "

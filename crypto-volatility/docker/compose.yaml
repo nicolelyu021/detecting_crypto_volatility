@@ -67,6 +67,9 @@ services:
       CONFIG_PATH: /app/config.yaml
       PORT: 8000
       MLFLOW_TRACKING_URI: "http://mlflow:5000"  # Use service name in Docker network
+      # MODEL ROLLBACK FEATURE - Set to "baseline" to use simple backup model
+      # MODEL_VARIANT: "baseline"  # Uncomment to enable rollback mode
+      # Default: Uses ML model from MLflow or local pickle
     volumes:
       - ../models:/app/models
       - ../config.yaml:/app/config.yaml
@@ -86,12 +89,17 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.consumer
     container_name: volatility-prediction-consumer
+    ports:
+      - "8001:8001"  # Expose Prometheus metrics endpoint
     environment:
       CONFIG_PATH: /app/config.yaml
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       MLFLOW_TRACKING_URI: http://mlflow:5000
-      # Optional: Override model source
-      # MODEL_VARIANT: "models:/xgb_model/Production"
+      METRICS_PORT: 8001
+      # MODEL ROLLBACK FEATURE - Set to "baseline" to use simple backup model
+      # MODEL_VARIANT: "baseline"  # Uncomment to enable rollback mode
+      # Or use MLflow: MODEL_VARIANT: "models:/xgb_model/Production"
+      # Default: Uses ML model from MLflow or local pickle
     volumes:
       - ../models:/app/models
       - ../config.yaml:/app/config.yaml

@@ -59,6 +59,25 @@ PREDICTION_PROBABILITY = Histogram(
 
 MODEL_LOAD_TIME = Gauge("model_load_time_seconds", "Time taken to load the model")
 
+# NEW Week 6 Metrics - Error tracking and request counting
+REQUEST_COUNTER = Counter(
+    "volatility_api_requests_total", 
+    "Total number of API requests", 
+    ["method", "endpoint", "status"]
+)
+
+ERROR_COUNTER = Counter(
+    "volatility_api_errors_total", 
+    "Total number of API errors", 
+    ["endpoint", "error_type"]
+)
+
+# Track API health status
+API_HEALTH = Gauge(
+    "volatility_api_health_status", 
+    "Health status of API (1=healthy, 0=unhealthy)"
+)
+
 # Global predictor instance
 predictor: VolatilityPredictor | None = None
 model_version: str = "unknown"
@@ -125,8 +144,30 @@ def load_model(config_path: str = "config.yaml"):
     mlflow_model = None
 
     try:
+        # Priority 0: Load baseline model if MODEL_VARIANT=baseline (rollback safety mechanism)
+        if model_variant and model_variant.lower() == "baseline":
+            logger.info("🔄 ROLLBACK MODE: Loading baseline model...")
+            models_dir = Path(config["modeling"]["models_dir"])
+            baseline_path = models_dir / "baseline_model.pkl"
+            
+            if not baseline_path.exists():
+                raise FileNotFoundError(f"Baseline model not found: {baseline_path}")
+            
+            predictor = VolatilityPredictor(
+                str(baseline_path),
+                scaler_path=None,
+                model_type="baseline",
+            )
+            model_version = f"baseline-{int(baseline_path.stat().st_mtime)}"
+            loaded_from = "baseline_rollback"
+            logger.info(f"✅ Loaded BASELINE model from: {baseline_path}")
+            logger.info("⚠️  ROLLBACK MODE ACTIVE - Using simple baseline predictor")
+            
+            # Skip MLflow loading since we're using baseline
+            mlflow_model = None
+        
         # Priority 1: Load from MLflow Model Registry (if MODEL_VARIANT is set)
-        if model_variant and model_variant.startswith("models:/"):
+        elif model_variant and model_variant.startswith("models:/"):
             logger.info(f"Loading model from MLflow Model Registry: {model_variant}")
             try:
                 mlflow_model = mlflow.pyfunc.load_model(model_variant)
@@ -303,14 +344,22 @@ async def startup_event():
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
+    is_healthy = predictor is not None
     health_status = {
-        "status": "healthy" if predictor is not None else "unhealthy",
-        "model_loaded": predictor is not None,
+        "status": "healthy" if is_healthy else "unhealthy",
+        "model_loaded": is_healthy,
         "model_version": model_version,
         "timestamp": time.time(),
     }
 
-    if predictor is None:
+    # Update health metric
+    API_HEALTH.set(1 if is_healthy else 0)
+    
+    # Track request
+    status_code = 200 if is_healthy else 503
+    REQUEST_COUNTER.labels(method="GET", endpoint="/health", status=status_code).inc()
+
+    if not is_healthy:
         return JSONResponse(status_code=503, content=health_status)
 
     return health_status
@@ -319,6 +368,7 @@ async def health_check():
 @app.get("/version")
 async def get_version():
     """Get API and model version information."""
+    REQUEST_COUNTER.labels(method="GET", endpoint="/version", status=200).inc()
     return {
         "api_version": "1.0.0",
         "model_version": model_version,
@@ -339,6 +389,8 @@ async def predict(features: FeatureRequest):
     - timestamp: Prediction timestamp
     """
     if predictor is None:
+        REQUEST_COUNTER.labels(method="POST", endpoint="/predict", status=503).inc()
+        ERROR_COUNTER.labels(endpoint="/predict", error_type="model_not_loaded").inc()
         raise HTTPException(status_code=503, detail="Model not loaded")
 
     start_time = time.time()
@@ -388,6 +440,7 @@ async def predict(features: FeatureRequest):
         PREDICTION_LATENCY.observe(latency)
         PREDICTION_PROBABILITY.observe(prob_value)
         PREDICTION_COUNTER.labels(prediction=str(prediction)).inc()
+        REQUEST_COUNTER.labels(method="POST", endpoint="/predict", status=200).inc()
 
         return PredictionResponse(
             prediction=prediction,
@@ -396,8 +449,13 @@ async def predict(features: FeatureRequest):
             timestamp=time.time(),
         )
 
+    except HTTPException:
+        # Re-raise HTTP exceptions without wrapping them
+        raise
     except Exception as e:
         logger.error(f"Prediction error: {e}", exc_info=True)
+        REQUEST_COUNTER.labels(method="POST", endpoint="/predict", status=500).inc()
+        ERROR_COUNTER.labels(endpoint="/predict", error_type="prediction_error").inc()
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
 

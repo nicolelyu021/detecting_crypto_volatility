@@ -12,3 +12,10 @@ scrape_configs:
           service: 'volatility-api'
           environment: 'development'
 
+  - job_name: 'volatility-consumer'
+    static_configs:
+      - targets: ['prediction-consumer:8001']
+        labels:
+          service: 'volatility-consumer'
+          environment: 'development'
+
