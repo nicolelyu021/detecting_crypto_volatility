@@ -21,14 +21,15 @@ This runbook provides operational procedures for running, monitoring, and troubl
 
 1. [Quick Reference](#quick-reference)
 2. [Startup Procedures](#startup-procedures)
-3. [Shutdown Procedures](#shutdown-procedures)
-4. [Health Checks](#health-checks)
-5. [Monitoring](#monitoring)
-6. [Common Issues & Solutions](#common-issues--solutions)
-7. [Emergency Procedures](#emergency-procedures)
-8. [Configuration Management](#configuration-management)
-9. [Performance Tuning](#performance-tuning)
-10. [Escalation](#escalation)
+3. [Realtime Data Ingestion and Prediction](#realtime-data-ingestion-and-prediction)
+4. [Shutdown Procedures](#shutdown-procedures)
+5. [Health Checks](#health-checks)
+6. [Monitoring](#monitoring)
+7. [Common Issues & Solutions](#common-issues--solutions)
+8. [Emergency Procedures](#emergency-procedures)
+9. [Configuration Management](#configuration-management)
+10. [Performance Tuning](#performance-tuning)
+11. [Escalation](#escalation)
 
 ---
 
@@ -50,7 +51,7 @@ This runbook provides operational procedures for running, monitoring, and troubl
 
 ```bash
 # Start all services
-cd crypto-volatility/docker
+cd docker
 docker compose up -d
 
 # Check status
@@ -84,7 +85,7 @@ docker compose down && docker compose up -d
 
 1. **Navigate to docker directory**
    ```bash
-   cd /path/to/crypto-volatility/docker
+   cd docker
    ```
 
 2. **Start all services**
@@ -156,6 +157,419 @@ If running for the first time:
 
 ---
 
+## Realtime Data Ingestion and Prediction
+
+### Overview
+
+The system supports realtime data ingestion from Coinbase WebSocket API and automated predictions via Kafka consumer. This enables continuous monitoring and prediction of crypto volatility spikes.
+
+**Components:**
+- **WebSocket Ingestor** (`scripts/ws_ingest.py`): Connects to Coinbase, streams ticker data to Kafka
+- **Prediction Consumer** (`scripts/prediction_consumer.py`): Consumes features from Kafka, makes predictions, publishes results
+
+---
+
+### Prerequisites for Realtime Operations
+
+**Before starting ingestion or consumer, install required dependencies:**
+
+**Option 1: Install all dependencies (recommended)**
+
+**macOS users - Install OpenMP first (required for XGBoost):**
+```bash
+brew install libomp
+```
+
+**Then install Python dependencies:**
+```bash
+# Install all project dependencies from root directory
+pip install -r requirements.txt
+```
+
+**Option 2: Install dependencies separately**
+
+**For WebSocket Ingestion only:**
+```bash
+pip install confluent-kafka websocket-client pyyaml python-dotenv pandas pyarrow numpy
+```
+
+**For Prediction Consumer only (includes ML dependencies):**
+
+**macOS users - Install OpenMP first:**
+```bash
+brew install libomp
+```
+
+**Then install Python packages:**
+```bash
+pip install confluent-kafka pyyaml python-dotenv pandas pyarrow numpy \
+            xgboost scikit-learn mlflow prometheus-client
+```
+
+**Or use the consumer-specific requirements file:**
+```bash
+pip install -r requirements-consumer.txt
+```
+
+**Verify installation:**
+
+```bash
+# Test ingestion dependencies
+python3 -c "import confluent_kafka; import websocket; print('✅ Ingestion dependencies OK')"
+
+# Test consumer dependencies (including XGBoost - critical!)
+python3 -c "import xgboost; import sklearn; import confluent_kafka; print('✅ Consumer dependencies OK')"
+
+# Comprehensive test - all critical imports
+python3 -c "
+import confluent_kafka
+import websocket
+import xgboost
+import sklearn
+import pandas
+import numpy
+import yaml
+import prometheus_client
+from models.infer import VolatilityPredictor
+print('✅ All dependencies installed correctly')
+"
+```
+
+**Common Issues:**
+
+1. **If `python` command is not found:** Use `python3` instead
+
+2. **If `ModuleNotFoundError: No module named 'xgboost'`:**
+   ```bash
+   pip install xgboost scikit-learn
+   ```
+
+3. **If XGBoost Library (libxgboost.dylib) could not be loaded (macOS):**
+   ```bash
+   # Install OpenMP runtime (required for XGBoost on macOS)
+   brew install libomp
+   
+   # Reinstall XGBoost
+   pip uninstall xgboost
+   pip install xgboost
+   
+   # Verify
+   python3 -c "import xgboost; print('✅ XGBoost installed')"
+   ```
+
+4. **If model loading fails:** Ensure `xgboost>=2.0.0` is installed (required for pickled XGBoost models)
+
+**Additional Prerequisites:**
+- All Docker services are running (see [Startup Procedures](#startup-procedures))
+- Kafka is healthy and accessible
+- Coinbase WebSocket API credentials configured (if required)
+
+---
+
+### Starting Realtime Ingestion
+
+**Start WebSocket Ingestor:**
+
+```bash
+# From project root directory
+python3 scripts/ws_ingest.py
+
+# Or with custom config
+CONFIG_PATH=config.yaml python3 scripts/ws_ingest.py
+
+# Note: Use 'python' if python3 is aliased or if that's your default
+```
+
+**What it does:**
+- Connects to Coinbase Advanced Trade WebSocket API
+- Subscribes to ticker channels (BTC-USD, ETH-USD by default)
+- Featurizes incoming ticker data
+- Publishes feature messages to Kafka topic: `crypto-features`
+
+**Expected Output:**
+```
+INFO - Connected to Coinbase WebSocket
+INFO - Subscribed to ticker channel: BTC-USD
+INFO - Publishing to Kafka topic: crypto-features
+INFO - Message published: {"price": 50000.0, ...}
+```
+
+**Stop Ingestor:**
+- Press `Ctrl+C` for graceful shutdown
+- Ingestor will close WebSocket connection and flush Kafka messages
+
+---
+
+### Starting Feature Engineering
+
+**Start Feature Engineer:**
+
+```bash
+# From project root directory
+python3 features/featurizer.py
+
+# Or with custom config
+CONFIG_PATH=config.yaml python3 features/featurizer.py
+```
+
+**What it does:**
+- Connects to Kafka and subscribes to raw tick data topic (`crypto-ticks` or configured `topic_raw`)
+- Computes windowed features from raw tick data:
+  - Returns over multiple intervals (1s, 5s, 30s, 60s)
+  - Bid-ask spreads (absolute and relative)
+  - Volatility (rolling standard deviation)
+  - Trade intensity
+  - Order book imbalance
+- Publishes processed features to Kafka topic: `crypto-features`
+- Saves features to disk for offline analysis (optional)
+
+**Expected Output:**
+```
+INFO - Connecting to Kafka at localhost:9092
+INFO - Subscribing to topic: crypto-ticks
+INFO - Feature engineer started
+INFO - Processing tick data...
+INFO - Computed features for BTC-USD
+INFO - Published features to topic: crypto-features
+```
+
+**Stop Feature Engineer:**
+- Press `Ctrl+C` for graceful shutdown
+- Feature engineer will commit Kafka offsets and close connections
+
+---
+
+### Starting Prediction Consumer
+
+**Prerequisites:**
+- Dependencies installed (see [Prerequisites for Realtime Operations](#prerequisites-for-realtime-operations))
+- All Docker services are running
+- Kafka has feature messages available
+- Model files are present in `models/artifacts/`
+
+**Start Prediction Consumer:**
+
+```bash
+# From project root directory
+python3 scripts/prediction_consumer.py --config config.yaml
+
+# Or with default config (config.yaml)
+python3 scripts/prediction_consumer.py
+
+# Note: Use 'python' if python3 is aliased or if that's your default
+```
+
+**What it does:**
+- Connects to Kafka and subscribes to `crypto-features` topic
+- Loads volatility prediction model
+- For each feature message:
+  - Makes prediction using loaded model
+  - Publishes prediction to Kafka topic: `crypto-predictions`
+  - Exposes metrics on port 8001
+
+**Expected Output:**
+```
+INFO - Loading model from models/artifacts/xgboost_model.pkl
+INFO - Connected to Kafka
+INFO - Subscribed to topic: crypto-features
+INFO - ✅ Prediction consumer started
+INFO - Processing message: {"prediction": 0, "probability": 0.001, ...}
+```
+
+**Consumer Metrics:**
+- Available at: http://localhost:8001/metrics
+- Key metrics:
+  - `volatility_consumer_messages_processed_total`
+  - `volatility_consumer_predictions_made_total`
+  - `volatility_consumer_lag_seconds`
+  - `volatility_consumer_errors_total`
+
+**Stop Consumer:**
+- Press `Ctrl+C` for graceful shutdown
+- Consumer will commit offsets and close Kafka connection
+
+---
+
+### Running All Components Together
+
+**Terminal 1 - Start Ingestion:**
+```bash
+python3 scripts/ws_ingest.py
+```
+
+**Terminal 2 - Start Feature Engineering:**
+```bash
+python3 features/featurizer.py
+```
+
+**Terminal 3 - Start Consumer:**
+```bash
+python3 scripts/prediction_consumer.py
+```
+
+**Terminal 4 - Monitor:**
+```bash
+# Watch logs
+docker compose logs -f
+
+# Check Kafka topics
+docker exec -it kafka kafka-topics --list --bootstrap-server localhost:9092
+
+# Monitor consumer lag
+curl -s http://localhost:8001/metrics | grep consumer_lag
+```
+
+---
+
+### Verifying Realtime Pipeline
+
+**1. Check Kafka Topics:**
+```bash
+# List topics
+docker exec -it kafka kafka-topics --list --bootstrap-server localhost:9092
+
+# Expected:
+# - crypto-features (ingestion output)
+# - crypto-predictions (consumer output)
+```
+
+**2. Check Message Flow:**
+```bash
+# Monitor features being produced
+docker exec -it kafka kafka-console-consumer \
+  --bootstrap-server localhost:9092 \
+  --topic crypto-features \
+  --from-beginning
+
+# Monitor predictions being produced
+docker exec -it kafka kafka-console-consumer \
+  --bootstrap-server localhost:9092 \
+  --topic crypto-predictions \
+  --from-beginning
+```
+
+**3. Check Consumer Metrics:**
+```bash
+# Messages processed
+curl -s http://localhost:8001/metrics | grep messages_processed
+
+# Consumer lag (should be low)
+curl -s http://localhost:8001/metrics | grep consumer_lag
+
+# Errors (should be 0)
+curl -s http://localhost:8001/metrics | grep errors_total
+```
+
+**4. Check Grafana Dashboard:**
+- Open http://localhost:3000
+- View "Consumer Lag" panel
+- View "Predictions Per Second" panel
+- Verify metrics are updating
+
+---
+
+### Troubleshooting Ingestion
+
+**Issue: WebSocket connection fails**
+```bash
+# Check logs
+python scripts/ws_ingest.py 2>&1 | grep -i error
+
+# Verify network connectivity
+curl -I https://advanced-trade-ws.coinbase.com
+
+# Check Kafka connectivity
+docker exec -it kafka kafka-broker-api-versions \
+  --bootstrap-server localhost:9092
+```
+
+**Issue: No messages in Kafka**
+```bash
+# Check if ingestor is running
+ps aux | grep ws_ingest
+
+# Check Kafka topic exists
+docker exec -it kafka kafka-topics --describe \
+  --bootstrap-server localhost:9092 \
+  --topic crypto-features
+
+# Check producer logs for errors
+# (rerun with verbose logging)
+```
+
+---
+
+### Troubleshooting Consumer
+
+**Issue: ModuleNotFoundError: No module named 'xgboost'**
+
+**Symptoms:**
+- Error when starting prediction consumer: `ModuleNotFoundError: No module named 'xgboost'`
+- Consumer fails to load model
+
+**Solution:**
+```bash
+# Install XGBoost and dependencies
+pip install xgboost scikit-learn mlflow prometheus-client
+
+# macOS users: Install OpenMP library first (required for XGBoost)
+brew install libomp
+
+# Reinstall XGBoost after installing OpenMP
+pip uninstall xgboost
+pip install xgboost
+
+# Verify installation
+python3 -c "import xgboost; print('✅ XGBoost installed')"
+```
+
+**Issue: XGBoost Library (libxgboost.dylib) could not be loaded**
+
+**Symptoms:**
+- Error: `XGBoostError: XGBoost Library (libxgboost.dylib) could not be loaded`
+- Error message mentions: `Library not loaded: @rpath/libomp.dylib`
+
+**Solution (macOS only):**
+```bash
+# Install OpenMP runtime (required dependency for XGBoost)
+brew install libomp
+
+# Reinstall XGBoost
+pip uninstall xgboost
+pip install --upgrade xgboost
+
+# Verify
+python3 -c "import xgboost; print('✅ XGBoost working')"
+```
+
+**Issue: Consumer not processing messages**
+```bash
+# Check consumer logs
+python scripts/prediction_consumer.py 2>&1 | tail -50
+
+# Verify model is loaded
+ls -lh models/artifacts/
+
+# Check consumer lag
+curl -s http://localhost:8001/metrics | grep consumer_lag
+```
+
+**Issue: High consumer lag**
+```bash
+# Check if consumer is running
+ps aux | grep prediction_consumer
+
+# Restart consumer
+# (Stop with Ctrl+C, then restart)
+
+# Check Kafka topic has messages
+docker exec -it kafka kafka-run-class kafka.tools.GetOffsetShell \
+  --broker-list localhost:9092 \
+  --topic crypto-features
+```
+
+---
+
 ## Shutdown Procedures
 
 ### Standard Shutdown
@@ -164,7 +578,7 @@ If running for the first time:
 
 1. **Stop all services**
    ```bash
-   cd crypto-volatility/docker
+   cd docker
    docker compose down
    ```
    
@@ -699,7 +1113,7 @@ docker compose logs api | grep "422"
 **Steps:**
 ```bash
 # 1. Stop everything
-cd crypto-volatility/docker
+cd docker
 docker compose down
 
 # 2. Verify all stopped

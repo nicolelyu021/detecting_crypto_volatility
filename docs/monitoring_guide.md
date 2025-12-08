@@ -52,7 +52,6 @@ curl http://localhost:8000/metrics | grep volatility_predictions_total
 #### 1. Start Services
 
 ```bash
-cd crypto-volatility
 docker-compose -f docker/compose.yaml up -d
 ```
 

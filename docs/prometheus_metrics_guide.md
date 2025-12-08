@@ -209,7 +209,7 @@ After starting your services, verify metrics are being collected:
 
 ```bash
 # Start services
-cd crypto-volatility/docker
+cd docker
 docker compose up -d
 
 # Wait 30 seconds, then check metrics

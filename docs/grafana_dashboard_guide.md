@@ -275,7 +275,6 @@ Arrange panels in this order (top to bottom, left to right):
 Open a new terminal and run:
 
 ```bash
-cd crypto-volatility
 
 # Make multiple predictions
 for i in {1..50}; do

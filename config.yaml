@@ -25,7 +25,7 @@ ingestion:
   max_reconnect_attempts: 10
 
 features:
-  data_dir: "../data/processed"
+  data_dir: "data/processed"
   window_size: 300  # seconds (5 minutes lookback)
   prediction_horizon: 60  # seconds (60 seconds ahead)
   min_window_points: 10  # minimum points needed for feature computation

@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, week4, week5 ]
+    branches: [ final-release-12-08 ]
   pull_request:
-    branches: [ main, week4, week5 ]
+    branches: [ main, week4, week5, final-release-12-08 ]
   workflow_dispatch:  # Allows manual triggering from GitHub UI
 
 jobs:
@@ -24,13 +24,11 @@ jobs:
       
       - name: Run Black
         run: |
-          cd crypto-volatility
           black --check --diff .
         continue-on-error: false
       
       - name: Run Ruff
         run: |
-          cd crypto-volatility
           ruff check .
         continue-on-error: false
 
@@ -46,10 +44,8 @@ jobs:
       
       - name: Install dependencies
         run: |
-          cd crypto-volatility
           pip install -r requirements.txt
       
       - name: Run integration test
         run: |
-          cd crypto-volatility
           python -m pytest tests/ -v

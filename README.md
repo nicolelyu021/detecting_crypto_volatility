@@ -319,7 +319,7 @@ open http://localhost:3000
 ## Project Structure
 
 ```
-crypto-volatility/
+.
 ├── docker/
 │   ├── compose.yaml               # Docker services (Kafka, MLflow, Prometheus, Grafana)
 │   ├── prometheus.yml             # Prometheus scrape configuration

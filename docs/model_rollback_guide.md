@@ -172,7 +172,7 @@ curl -X POST http://localhost:8000/predict \
 
 **2. Immediate Rollback**
 ```bash
-cd crypto-volatility/docker
+cd docker
 
 # Quick rollback (fastest)
 docker compose stop api prediction-consumer
