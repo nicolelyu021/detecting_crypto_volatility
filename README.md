@@ -10,7 +10,7 @@ A **production-ready** real-time AI service for detecting short-term volatility 
 - 📘 Complete operational runbook
 - ✨ Production-grade MLOps
 
-📐 **[View Complete Architecture Diagram](docs/week6_architecture.md)** | 📊 **[View Dashboard Screenshot](docs/grafana_dashboard_screenshot.png)**
+📐 **[View Complete Architecture Diagram](docs/architecture.md)** | 📊 **[View Dashboard Screenshot](docs/grafana_dashboard_screenshot.png)**
 
 ## 🚀 Quick Setup 
 
@@ -63,7 +63,7 @@ docker-compose -f docker/compose.yaml ps
 | **Prometheus** | http://localhost:9090 | Metrics database & queries |
 | **MLflow** | http://localhost:5001 | Model tracking & registry |
 
-⭐ **Start here** for Week 6 monitoring demo!
+⭐ **Start here** for monitoring dashboards!
 
 ### 3. Replay Data to Test Pipeline
 
@@ -168,10 +168,10 @@ docker logs -f volatility-prediction-consumer
 | `/health` | GET | Health check and model status | `curl http://localhost:8000/health` |
 | `/version` | GET | API and model version info | `curl http://localhost:8000/version` |
 | `/predict` | POST | Make volatility prediction | See example above |
-| `/metrics` | GET | **Prometheus metrics** (Week 6) | `curl http://localhost:8000/metrics` |
+| `/metrics` | GET | **Prometheus metrics** | `curl http://localhost:8000/metrics` |
 | `/docs` | GET | Interactive API docs (Swagger UI) | Open in browser |
 
-### Metrics Endpoints (Week 6)
+### Metrics Endpoints
 - **API Metrics:** `http://localhost:8000/metrics` - Latency, requests, errors, health
 - **Consumer Metrics:** `http://localhost:8001/metrics` - Consumer lag, processing rate, throughput
 
@@ -181,7 +181,7 @@ docker logs -f volatility-prediction-consumer
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         MONITORING LAYER (Week 6)                        │
+│                            MONITORING LAYER                              │
 │                                                                          │
 │  ┌─────────────────┐         ┌──────────────────┐                      │
 │  │   Prometheus    │◄────────│   Grafana        │                      │
@@ -238,7 +238,7 @@ Raw Data → Kafka (ticks.raw)
 4. Check predictions: View `ticks.predictions` topic or consumer logs
 5. Monitor: Open Grafana at http://localhost:3000
 
-## 🎯 Week 6: Monitoring & Operations (NEW!)
+## 📊 Monitoring & Operations
 
 ### Performance Highlights
 
@@ -248,7 +248,7 @@ Our system **exceeds all SLO targets**:
 - **Consumer Lag:** 0 seconds (real-time!) ⚡
 - **Availability:** 100% uptime 💯
 
-### Week 6 Features
+### Key Features
 
 **1. Comprehensive Monitoring**
 ```bash
@@ -278,7 +278,7 @@ docker compose down && docker compose up -d
 - Defined SLOs with measurement methodology
 - Health checks for all services
 
-### Week 6 Quick Test
+### Quick Test
 
 ```bash
 # Test Prometheus metrics
@@ -300,19 +300,16 @@ open http://localhost:3000
 
 ## 📚 Documentation
 
-### Week 6 Deliverables ⭐
+### Core Documentation ⭐
 - **[SLO Document](docs/slo.md)** - Service Level Objectives and targets
 - **[Runbook](docs/runbook.md)** - Operational procedures and troubleshooting
+- **[Architecture](docs/architecture.md)** - System architecture overview
 - **[Drift Summary](docs/drift_summary.md)** - Data drift analysis
 - **[Model Rollback Guide](docs/model_rollback_guide.md)** - Rollback procedures
 - **[Prometheus Metrics Guide](docs/prometheus_metrics_guide.md)** - All metrics explained
 - **[Grafana Dashboard Setup](docs/grafana_dashboard_guide.md)** - Dashboard configuration
-- **[Week 6 Final Summary](WEEK6_FINAL_SUMMARY.md)** - Complete week 6 overview
-- **[Quick Start Guide](QUICK_START_WEEK6.md)** - Week 6 quick reference
 
-### Previous Milestones
-- [Week 4 Deliverables](WEEK4_DELIVERABLES.md) - API setup and thin slice
-- [Week 5 Deliverables](WEEK5_DELIVERABLES.md) - CI/CD and testing
+### Additional Guides
 - [Prediction Consumer Guide](docs/prediction_consumer.md) - Kafka consumer details
 - [MLflow Integration](docs/mlflow_integration.md) - Model versioning
 
@@ -352,12 +349,8 @@ open http://localhost:3000
 │   └── evidently/                 # Drift detection reports
 ├── config.yaml                    # Configuration file
 ├── requirements.txt               # Python dependencies
-├── WEEK6_FINAL_SUMMARY.md         # Week 6 completion summary
-├── QUICK_START_WEEK6.md           # Week 6 quick reference
 └── README.md                      # This file
 ```
-
-⭐ = Week 6 deliverables
 
 ## Prerequisites
 
@@ -431,7 +424,7 @@ Edit `config.yaml` to customize:
 
 **Note**: `.env.example` contains safe placeholder values and can be committed to GitHub. Your actual `.env` file should never be committed.
 
-## Testing Milestone 1 Requirements
+## Testing & Verification
 
 ### ✅ Verify Services Running
 
@@ -485,7 +478,7 @@ docker run --rm crypto-ingestor --help
 - Check Kafka topic exists: `docker exec kafka kafka-topics --list --bootstrap-server localhost:9092`
 - Review ingestor logs for errors
 
-## Milestone 2: Feature Engineering & EDA
+## Feature Engineering & EDA
 
 ### Feature Engineering Pipeline
 
@@ -538,7 +531,7 @@ This generates:
 - `reports/evidently/evidently_report.html` - HTML report
 - `reports/evidently/evidently_report.json` - JSON report
 
-## Milestone 3: Modeling, Tracking & Evaluation
+## Modeling, Tracking & Evaluation
 
 ### Train Models
 
@@ -617,7 +610,7 @@ This will:
 - Measure latency statistics (mean, median, P95, P99)
 - Generate a detailed report in `load_test_report.json`
 
-### Metrics Testing (Week 6)
+### Metrics Testing
 
 Verify Prometheus metrics are working:
 
@@ -642,7 +635,7 @@ View CI status in the GitHub Actions tab.
 
 ---
 
-## 📊 Monitoring & Observability (Week 6)
+## 📊 Monitoring & Observability
 
 ### Grafana Dashboards
 
@@ -704,7 +697,7 @@ cat docs/drift_summary.md
 
 ---
 
-## 🔄 Model Rollback Feature (Week 6)
+## 🔄 Model Rollback Feature
 
 ### Quick Rollback
 
@@ -744,7 +737,7 @@ See `docs/model_rollback_guide.md` for complete rollback procedures.
 
 ---
 
-## 📘 Operational Procedures (Week 6)
+## 📘 Operational Procedures
 
 ### Startup Procedure
 
@@ -791,12 +784,6 @@ Common issues and solutions are documented in:
 ---
 
 ## 🎓 Project Status
-
-### Completed Milestones
-
-- ✅ **Week 4:** System setup, API endpoints, Docker orchestration
-- ✅ **Week 5:** CI/CD pipeline, load testing, resilience features
-- ✅ **Week 6:** Monitoring (Prometheus/Grafana), SLOs, drift detection, rollback
 
 ### Current Status
 
@@ -850,7 +837,7 @@ Potential improvements for production deployment:
 
 **Course:**
 - CMU 94-879: Operationalizing AI
-- Week 6 Project: Real-Time Crypto AI Service
+- Real-Time Crypto Volatility Detection Service
 
 ---
 

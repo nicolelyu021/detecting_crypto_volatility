@@ -35,35 +35,30 @@ logger = logging.getLogger(__name__)
 
 # Prometheus metrics for consumer
 CONSUMER_MESSAGES_PROCESSED = Counter(
-    "volatility_consumer_messages_processed_total",
-    "Total number of messages processed by consumer"
+    "volatility_consumer_messages_processed_total", "Total number of messages processed by consumer"
 )
 
 CONSUMER_PREDICTIONS_MADE = Counter(
-    "volatility_consumer_predictions_made_total",
-    "Total number of predictions made by consumer"
+    "volatility_consumer_predictions_made_total", "Total number of predictions made by consumer"
 )
 
 CONSUMER_ERRORS = Counter(
-    "volatility_consumer_errors_total",
-    "Total number of errors in consumer",
-    ["error_type"]
+    "volatility_consumer_errors_total", "Total number of errors in consumer", ["error_type"]
 )
 
 CONSUMER_PROCESSING_TIME = Histogram(
     "volatility_consumer_processing_seconds",
     "Time to process each message",
-    buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0]
+    buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0],
 )
 
 CONSUMER_LAG = Gauge(
     "volatility_consumer_lag_seconds",
-    "Consumer lag in seconds (time difference between message timestamp and processing time)"
+    "Consumer lag in seconds (time difference between message timestamp and processing time)",
 )
 
 CONSUMER_PROCESSING_RATE = Gauge(
-    "volatility_consumer_processing_rate",
-    "Current processing rate (messages per second)"
+    "volatility_consumer_processing_rate", "Current processing rate (messages per second)"
 )
 
 
@@ -111,7 +106,7 @@ class PredictionConsumer:
             logger.info("🔄 ROLLBACK MODE: Loading baseline model...")
             models_dir = Path(self.config["modeling"]["models_dir"])
             baseline_path = models_dir / "baseline_model.pkl"
-            
+
             if baseline_path.exists():
                 self.predictor = VolatilityPredictor(
                     str(baseline_path),
@@ -124,7 +119,9 @@ class PredictionConsumer:
                 logger.info("⚠️  ROLLBACK MODE ACTIVE - Using simple baseline predictor")
                 return  # Exit early, skip MLflow loading
             else:
-                logger.warning(f"Baseline model not found at {baseline_path}, falling back to ML model")
+                logger.warning(
+                    f"Baseline model not found at {baseline_path}, falling back to ML model"
+                )
 
         try:
             import mlflow
@@ -293,10 +290,12 @@ class PredictionConsumer:
         logger.info(f"Created Kafka producer for {bootstrap_servers}")
         return producer
 
-    def _process_feature_message(self, message_value: bytes, message_timestamp: float = None) -> dict | None:
+    def _process_feature_message(
+        self, message_value: bytes, message_timestamp: float = None
+    ) -> dict | None:
         """Process a feature message and make a prediction."""
         start_time = time.time()
-        
+
         try:
             # Parse JSON message
             feature_data = json.loads(message_value.decode("utf-8"))
@@ -497,10 +496,10 @@ class PredictionConsumer:
                     # Process message
                     self.messages_processed += 1
                     CONSUMER_MESSAGES_PROCESSED.inc()
-                    
+
                     # Get message timestamp (Kafka message timestamp in milliseconds)
                     msg_timestamp = msg.timestamp()[1] / 1000.0 if msg.timestamp()[0] == 1 else None
-                    
+
                     prediction = self._process_feature_message(msg.value(), msg_timestamp)
 
                     if prediction:

@@ -61,22 +61,17 @@ MODEL_LOAD_TIME = Gauge("model_load_time_seconds", "Time taken to load the model
 
 # NEW Week 6 Metrics - Error tracking and request counting
 REQUEST_COUNTER = Counter(
-    "volatility_api_requests_total", 
-    "Total number of API requests", 
-    ["method", "endpoint", "status"]
+    "volatility_api_requests_total",
+    "Total number of API requests",
+    ["method", "endpoint", "status"],
 )
 
 ERROR_COUNTER = Counter(
-    "volatility_api_errors_total", 
-    "Total number of API errors", 
-    ["endpoint", "error_type"]
+    "volatility_api_errors_total", "Total number of API errors", ["endpoint", "error_type"]
 )
 
 # Track API health status
-API_HEALTH = Gauge(
-    "volatility_api_health_status", 
-    "Health status of API (1=healthy, 0=unhealthy)"
-)
+API_HEALTH = Gauge("volatility_api_health_status", "Health status of API (1=healthy, 0=unhealthy)")
 
 # Global predictor instance
 predictor: VolatilityPredictor | None = None
@@ -149,10 +144,10 @@ def load_model(config_path: str = "config.yaml"):
             logger.info("🔄 ROLLBACK MODE: Loading baseline model...")
             models_dir = Path(config["modeling"]["models_dir"])
             baseline_path = models_dir / "baseline_model.pkl"
-            
+
             if not baseline_path.exists():
                 raise FileNotFoundError(f"Baseline model not found: {baseline_path}")
-            
+
             predictor = VolatilityPredictor(
                 str(baseline_path),
                 scaler_path=None,
@@ -162,10 +157,10 @@ def load_model(config_path: str = "config.yaml"):
             loaded_from = "baseline_rollback"
             logger.info(f"✅ Loaded BASELINE model from: {baseline_path}")
             logger.info("⚠️  ROLLBACK MODE ACTIVE - Using simple baseline predictor")
-            
+
             # Skip MLflow loading since we're using baseline
             mlflow_model = None
-        
+
         # Priority 1: Load from MLflow Model Registry (if MODEL_VARIANT is set)
         elif model_variant and model_variant.startswith("models:/"):
             logger.info(f"Loading model from MLflow Model Registry: {model_variant}")
@@ -354,7 +349,7 @@ async def health_check():
 
     # Update health metric
     API_HEALTH.set(1 if is_healthy else 0)
-    
+
     # Track request
     status_code = 200 if is_healthy else 503
     REQUEST_COUNTER.labels(method="GET", endpoint="/health", status=status_code).inc()
