@@ -215,6 +215,160 @@ open http://localhost:9090/targets
 
 ---
 
+## 🔄 Recovery Procedures
+
+### Full System Restart
+**When:** Multiple services failing, unresponsive system, after config changes
+
+```bash
+# Stop everything
+cd crypto-volatility/docker
+docker compose down
+
+# Wait a moment
+sleep 5
+
+# Start fresh
+docker compose up -d
+
+# Wait for services (60 seconds)
+sleep 60
+
+# Verify health
+curl http://localhost:8000/health
+```
+
+**Expected time:** ~2 minutes
+
+---
+
+### Rollback to Baseline Model
+**When:** ML model causing errors, high error rate (>5%), prediction quality degraded
+
+```bash
+# Stop API
+docker compose stop api
+
+# Edit docker/compose.yaml - add under api service:
+#   environment:
+#     MODEL_VARIANT: baseline
+
+# Or set via environment variable
+cd crypto-volatility/docker
+MODEL_VARIANT=baseline docker compose up -d api
+
+# Verify rollback
+curl http://localhost:8000/version
+# Check model_version changed
+
+# Monitor for 5 minutes
+open http://localhost:3000
+```
+
+**Note:** Baseline model has lower accuracy but higher reliability.
+
+---
+
+### Clear Kafka Backlog
+**When:** Consumer lag > 300 seconds, old messages backing up, testing reset
+
+**⚠️ WARNING: This deletes all messages!**
+
+```bash
+# Stop consumer
+docker compose stop prediction-consumer
+
+# Remove Kafka data volume
+docker compose down
+docker volume rm docker_kafka-data 2>/dev/null || true
+
+# Restart everything
+docker compose up -d
+
+# Wait for services
+sleep 60
+
+# Verify consumer lag is 0
+curl http://localhost:8001/metrics | grep lag
+```
+
+---
+
+### Emergency Shutdown
+**When:** System compromised, critical bug, emergency maintenance
+
+```bash
+# Immediate stop (don't wait for graceful shutdown)
+cd crypto-volatility/docker
+docker compose kill
+
+# Remove containers
+docker compose down
+
+# Document incident (create notes for post-mortem)
+```
+
+---
+
+### Reset with Clean State
+**When:** Persistent issues, corrupted volumes, complete reset needed
+
+**⚠️ WARNING: This deletes all data!**
+
+```bash
+# Stop and remove everything including volumes
+cd crypto-volatility/docker
+docker compose down -v
+
+# Clean up Docker resources (optional)
+docker system prune -f
+
+# Restart fresh
+docker compose up -d
+
+# Wait and verify
+sleep 60
+curl http://localhost:8000/health
+```
+
+---
+
+### Service-Specific Recovery
+
+**API not responding:**
+```bash
+docker compose restart api
+sleep 20
+curl http://localhost:8000/health
+```
+
+**Consumer lagging:**
+```bash
+# Check logs
+docker compose logs prediction-consumer | tail -50
+
+# Restart consumer
+docker compose restart prediction-consumer
+
+# Scale up if needed (multiple consumers)
+docker compose up -d --scale prediction-consumer=2
+```
+
+**Prometheus not scraping:**
+```bash
+# Check targets
+open http://localhost:9090/targets
+
+# Restart Prometheus
+docker compose restart prometheus
+
+# Verify targets are UP
+sleep 10
+curl http://localhost:9090/api/v1/targets | jq '.data.activeTargets[] | {job: .labels.job, health: .health}'
+```
+
+---
+
 ## 📚 Documentation
 
 - **Full Metrics Guide:** `docs/prometheus_metrics_guide.md`
