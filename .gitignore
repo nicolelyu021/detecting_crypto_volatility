@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (large)
+data/raw/*.ndjson
+data/processed/*.parquet
+*.parquet
+
+# MLflow
+mlruns/
+mlruns.db
+
+# Predictions
+predictions*.parquet
+
+# Evidently HTML reports (can be regenerated)
+reports/evidently/*.html
+!handoff/reports/evidently/train_test_combined_report.html
+
+# Docker volumes
+docker/volumes/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Keep directory structure but ignore large files
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!handoff/data/raw/slice_10min.ndjson
+!handoff/data/processed/features_10min.parquet
+!handoff/predictions_10min.parquet
+
+# Assignment PDFs (don't commit assignment instructions)
+*Assignment*.pdf
+*Project*.pdf
+
+# AI artifacts (don't commit GenAI logs)
+docs/CHATGPT_FILES_LIST.md
+
+# Week 4 submission files
+# Submission zip is generated from handoff/ directory, no need to track
+week4_handoff_submission.zip
+# Keep WEEK4_SUBMISSION.md for documentation
+

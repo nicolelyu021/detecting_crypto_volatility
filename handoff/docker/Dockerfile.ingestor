@@ -1,0 +1,20 @@
+FROM python:3.11-slim
+
+# set working directory
+WORKDIR /app
+
+# copy dependencies and install
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# copy the ingestion script
+COPY scripts/ws_ingest.py scripts/ws_ingest.py
+
+# environment variables for the app
+ENV PAIR=BTC-USD
+ENV WS_URL=wss://ws-feed.exchange.coinbase.com
+ENV TOPIC_RAW=ticks.raw
+ENV KAFKA_SERVERS=kafka:9092
+
+# run the websocket ingestor
+CMD ["python", "scripts/ws_ingest.py"]

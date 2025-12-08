@@ -1,0 +1,6 @@
+feature,importance
+midprice_return_std,0.9778839
+midprice_return_mean,0.008746604
+bid_ask_spread,0.0074528162
+trade_intensity,0.0033639455
+order_book_imbalance,0.002552757
